@@ -1,0 +1,36 @@
+use crate::ros::*;
+
+/// Convert RMW QoS profile to ros-z QoS profile
+pub fn rmw_qos_to_ros_z_qos(qos: &rmw_qos_profile_t) -> ros_z::qos::QosProfile {
+    use ros_z::qos::*;
+
+    let history = match qos.history {
+        RMW_QOS_POLICY_HISTORY_KEEP_LAST => {
+            QosHistory::KeepLast(qos.depth)
+        }
+        RMW_QOS_POLICY_HISTORY_KEEP_ALL => QosHistory::KeepAll,
+        _ => QosHistory::KeepLast(10), // Default
+    };
+
+    let reliability = match qos.reliability {
+        RMW_QOS_POLICY_RELIABILITY_RELIABLE => QosReliability::Reliable,
+        RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT => QosReliability::BestEffort,
+        _ => QosReliability::Reliable, // Default
+    };
+
+    let durability = match qos.durability {
+        RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL => QosDurability::TransientLocal,
+        RMW_QOS_POLICY_DURABILITY_VOLATILE => QosDurability::Volatile,
+        _ => QosDurability::Volatile, // Default
+    };
+
+    QosProfile {
+        history,
+        reliability,
+        durability,
+        deadline: ros_z::qos::Duration::default(),
+        lifespan: ros_z::qos::Duration::default(),
+        liveliness: ros_z::qos::QosLiveliness::default(),
+        liveliness_lease_duration: ros_z::qos::Duration::default(),
+    }
+}

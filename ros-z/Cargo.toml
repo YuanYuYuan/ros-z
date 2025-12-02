@@ -40,6 +40,7 @@ prost-build = { workspace = true, optional = true }
 default = []
 protobuf = ["prost", "prost-build"]
 rcl-z = []
+rmw-z = []
 # Feature to enable examples that require external ROS message packages
 external_msgs = ["ros-z-msgs/external_msgs"]
 

@@ -1,0 +1,43 @@
+[package]
+name = "rmw-z"
+version = "0.1.0"
+edition = "2024"
+
+# NOTE: This crate requires RMW (ROS Middleware) dependencies at build time.
+# To build without ROS, exclude this crate from the workspace build:
+#   cargo build --workspace --exclude rmw-z --exclude ros-z-msgs --exclude ros-z-tests
+
+[dependencies]
+tracing = { workspace = true }
+zenoh = { workspace = true, default-features = false, features = [
+  "transport_tcp",
+] }
+flume = { workspace = true }
+parking_lot = { workspace = true }
+cxx = { workspace = true }
+cdr = { workspace = true }
+serde = { workspace = true, features = ["serde_derive"] }
+ros-z = { workspace = true, features = ["rmw-z"] }
+strum = { workspace = true, features = ["derive"] }
+rcl-z = { workspace = true }
+
+[lib]
+name = "rmw_z"
+crate-type = ["cdylib", "rlib"]
+
+[build-dependencies]
+bindgen = { workspace = true }
+cxx-build = { workspace = true }
+
+[features]
+# Tests that don't need any message packages
+test-core = []
+
+# Tests that need test_msgs package
+test-msgs = []
+
+# Run all tests
+test-all = ["test-core", "test-msgs"]
+
+# Legacy compatibility
+test-rmw = ["test-all"]

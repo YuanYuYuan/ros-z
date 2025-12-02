@@ -2321,6 +2321,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmw-z"
+version = "0.1.0"
+dependencies = [
+ "bindgen",
+ "cdr",
+ "cxx",
+ "cxx-build",
+ "flume",
+ "parking_lot",
+ "rcl-z",
+ "ros-z",
+ "serde",
+ "strum",
+ "tracing",
+ "zenoh",
+]
+
+[[package]]
 name = "ron"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
