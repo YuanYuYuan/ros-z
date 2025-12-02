@@ -46,6 +46,7 @@ pub const RMW_ZENOH_SERIALIZATION_FORMAT: &str = "cdr";
 use rcl_z::ros::{
     rmw_event_callback_t, rmw_event_type_t, rmw_gid_t, rmw_topic_endpoint_info_array_t,
 };
+use ros_z::Builder;
 
 use crate::{pubsub::PublisherImpl, ros::*, traits::*};
 
@@ -93,8 +94,9 @@ pub extern "C" fn rmw_create_publisher(
 
     let zpub_builder = node_impl
         .inner
-        .create_pub::<rcl_z::msg::RosMessage>(topic_str);
-    let qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { *qos_profile });
+        .create_pub::<rcl_z::msg::RosMessage>(topic_str)
+        .with_serdes::<rcl_z::msg::RosSerdes>();
+    let qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { &*qos_profile });
     let zpub_builder = zpub_builder.with_qos(qos);
     let zpub = match zpub_builder.build() {
         Ok(zpub) => zpub,
@@ -157,7 +159,7 @@ pub extern "C" fn rmw_publish(
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
-    match publisher_impl.publish(ros_message) {
+    match publisher_impl.publish(ros_message as *const std::os::raw::c_void) {
         Ok(_) => RMW_RET_OK as _,
         Err(e) => {
             tracing::error!("Failed to publish message: {}", e);
@@ -199,8 +201,9 @@ pub extern "C" fn rmw_create_subscription(
 
     let zsub_builder = node_impl
         .inner
-        .create_sub::<rcl_z::msg::RosMessage>(topic_str);
-    let qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { *qos_policies });
+        .create_sub::<rcl_z::msg::RosMessage>(topic_str)
+        .with_serdes::<rcl_z::msg::RosSerdes>();
+    let qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { &*qos_policies });
     let zsub_builder = zsub_builder.with_qos(qos);
     let zsub = match zsub_builder.build() {
         Ok(zsub) => zsub,
@@ -264,7 +267,7 @@ pub extern "C" fn rmw_take(
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
-    match subscription_impl.take(ros_message, taken) {
+    match subscription_impl.take(ros_message as *mut std::os::raw::c_void, taken) {
         Ok(_) => RMW_RET_OK as _,
         Err(_) => RMW_RET_ERROR as _,
     }
@@ -293,11 +296,10 @@ pub extern "C" fn rmw_create_client(
         .unwrap_or("");
 
     // Create client using ros-z
-    let qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { *qos_policies });
+    let _qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { &*qos_policies });
     let zclient = match node_impl
         .inner
         .create_client::<rcl_z::msg::RosService>(service_str)
-        .with_qos(qos)
         .build()
     {
         Ok(client) => client,
@@ -307,12 +309,23 @@ pub extern "C" fn rmw_create_client(
         }
     };
 
+    let service_type_support =
+        match unsafe { rcl_z::type_support::ServiceTypeSupport::new(type_support) } {
+            Ok(ts) => ts,
+            Err(e) => {
+                tracing::error!("Failed to create service type support: {}", e);
+                return std::ptr::null_mut();
+            }
+        };
+
     let client_impl = crate::service::ClientImpl {
         inner: zclient,
         service_name: service_str.to_string(),
         options: rmw_client_options_t {
             qos: unsafe { *qos_policies },
         },
+        request_ts: service_type_support.clone(),
+        response_ts: service_type_support,
     };
 
     let client = Box::new(rmw_client_t {
@@ -363,11 +376,10 @@ pub extern "C" fn rmw_create_service(
         .unwrap_or("");
 
     // Create service using ros-z
-    let qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { *qos_profile });
+    let _qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { &*qos_profile });
     let zserver = match node_impl
         .inner
-        .create_server::<rcl_z::msg::RosService>(service_str)
-        .with_qos(qos)
+        .create_service::<rcl_z::msg::RosService>(service_str)
         .build()
     {
         Ok(server) => server,
@@ -382,9 +394,20 @@ pub extern "C" fn rmw_create_service(
         Err(_) => return std::ptr::null_mut(),
     };
 
+    let service_type_support =
+        match unsafe { rcl_z::type_support::ServiceTypeSupport::new(type_support) } {
+            Ok(ts) => ts,
+            Err(e) => {
+                tracing::error!("Failed to create service type support: {}", e);
+                return std::ptr::null_mut();
+            }
+        };
+
     let service_impl = crate::service::ServiceImpl {
         inner: zserver,
         service_name: service_name_cstr,
+        request_ts: service_type_support.clone(),
+        response_ts: service_type_support,
     };
 
     let service = Box::new(rmw_service_t {
@@ -421,6 +444,8 @@ pub extern "C" fn rmw_get_node_names(
     node_names: *mut rcutils_string_array_t,
     node_namespaces: *mut rcutils_string_array_t,
 ) -> rmw_ret_t {
+    use std::ffi::CString;
+
     if node.is_null() || node_names.is_null() || node_namespaces.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
@@ -431,10 +456,25 @@ pub extern "C" fn rmw_get_node_names(
     };
 
     // Query graph for all nodes
-    let nodes = node_impl.graph.get_all_nodes();
+    let nodes = node_impl.graph.get_node_names();
 
-    // For now, just return OK with empty lists
-    // Full implementation would populate the string arrays
+    // Convert to CString vectors
+    let names_vec: Vec<CString> = nodes
+        .iter()
+        .map(|(name, _)| CString::new(name.as_str()).unwrap())
+        .collect();
+
+    let namespaces_vec: Vec<CString> = nodes
+        .iter()
+        .map(|(_, ns)| CString::new(ns.as_str()).unwrap())
+        .collect();
+
+    // Convert and assign to output arrays
+    unsafe {
+        *node_names = rcl_z::ros::rcutils_string_array_t::from(names_vec);
+        *node_namespaces = rcl_z::ros::rcutils_string_array_t::from(namespaces_vec);
+    }
+
     RMW_RET_OK as _
 }
 
@@ -445,12 +485,44 @@ pub extern "C" fn rmw_get_node_names_with_enclaves(
     node_namespaces: *mut rcutils_string_array_t,
     enclaves: *mut rcutils_string_array_t,
 ) -> rmw_ret_t {
+    use std::ffi::CString;
+
     if node.is_null() || node_names.is_null() || node_namespaces.is_null() || enclaves.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // Delegate to rmw_get_node_names for now
-    rmw_get_node_names(node, node_names, node_namespaces)
+    let node_impl = match unsafe { node.borrow_data() } {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Query graph for all nodes with enclaves
+    let nodes = node_impl.graph.get_node_names_with_enclaves();
+
+    // Convert to CString vectors
+    let names_vec: Vec<CString> = nodes
+        .iter()
+        .map(|(name, _, _)| CString::new(name.as_str()).unwrap())
+        .collect();
+
+    let namespaces_vec: Vec<CString> = nodes
+        .iter()
+        .map(|(_, ns, _)| CString::new(ns.as_str()).unwrap())
+        .collect();
+
+    let enclaves_vec: Vec<CString> = nodes
+        .iter()
+        .map(|(_, _, enc)| CString::new(enc.as_str()).unwrap())
+        .collect();
+
+    // Convert and assign to output arrays
+    unsafe {
+        *node_names = rcl_z::ros::rcutils_string_array_t::from(names_vec);
+        *node_namespaces = rcl_z::ros::rcutils_string_array_t::from(namespaces_vec);
+        *enclaves = rcl_z::ros::rcutils_string_array_t::from(enclaves_vec);
+    }
+
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]
@@ -492,8 +564,23 @@ pub extern "C" fn rmw_count_publishers(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
+    let node_impl = match unsafe { node.borrow_data() } {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let topic_str = match unsafe { std::ffi::CStr::from_ptr(topic_name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Query graph for publisher count on this topic
+    let publisher_count = node_impl
+        .graph
+        .count(ros_z::entity::EntityKind::Publisher, topic_str);
+
     unsafe {
-        *count = 0;
+        *count = publisher_count;
     }
     RMW_RET_OK as _
 }
@@ -508,8 +595,23 @@ pub extern "C" fn rmw_count_subscribers(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
+    let node_impl = match unsafe { node.borrow_data() } {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let topic_str = match unsafe { std::ffi::CStr::from_ptr(topic_name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Query graph for subscriber count on this topic
+    let subscriber_count = node_impl
+        .graph
+        .count(ros_z::entity::EntityKind::Subscription, topic_str);
+
     unsafe {
-        *count = 0;
+        *count = subscriber_count;
     }
     RMW_RET_OK as _
 }
@@ -747,21 +849,23 @@ pub extern "C" fn rmw_qos_profile_check_compatible(
     todo!()
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_get_gid_for_publisher(
-    publisher: *const rmw_publisher_t,
-    gid: *mut rmw_gid_t,
-) -> rmw_ret_t {
-    todo!()
-}
+// NOTE: These functions are commented out to avoid linker conflicts with librmw
+// They will be implemented when needed
+// #[unsafe(no_mangle)]
+// pub extern "C" fn rmw_get_gid_for_publisher(
+//     publisher: *const rmw_publisher_t,
+//     gid: *mut rmw_gid_t,
+// ) -> rmw_ret_t {
+//     todo!()
+// }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_get_gid_for_client(
-    client: *const rmw_client_t,
-    gid: *mut rmw_gid_t,
-) -> rmw_ret_t {
-    todo!()
-}
+// #[unsafe(no_mangle)]
+// pub extern "C" fn rmw_get_gid_for_client(
+//     client: *const rmw_client_t,
+//     gid: *mut rmw_gid_t,
+// ) -> rmw_ret_t {
+//     todo!()
+// }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_compare_gids_equal(

@@ -164,7 +164,3 @@ pub extern "C" fn rmw_context_fini(context: *mut rmw_context_t) -> rmw_ret_t {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_zenoh_get_session(context: *const rmw_context_t) -> *const ::std::os::raw::c_void {
-    todo!()
-}
