@@ -1,10 +1,10 @@
 use std::ffi::CString;
 use std::sync::Arc;
 
-use crate::traits::{BorrowImpl, OwnImpl};
 use crate::ros::*;
 use zenoh::Session;
 use crate::rmw_impl_has_data_ptr;
+use ros_z::Builder;
 
 /// Node implementation for RMW
 pub struct NodeImpl {
@@ -35,7 +35,7 @@ impl NodeImpl {
             session: session.clone(),
             counter: counter.clone(),
             graph: graph.clone(),
-        }.build()?;
+        }.build().map_err(|e| Box::new(e.to_string()) as Box<dyn std::error::Error>)?;
 
         Ok(Self {
             session,

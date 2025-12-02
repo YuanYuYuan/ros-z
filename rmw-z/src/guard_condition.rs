@@ -1,7 +1,4 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-
-use crate::traits::{BorrowImpl, OwnImpl};
 use crate::ros::*;
 use crate::rmw_impl_has_data_ptr;
 

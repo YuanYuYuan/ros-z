@@ -1,4 +1,3 @@
-use std::ffi::CString;
 use std::sync::Arc;
 
 use crate::ros::*;
@@ -20,7 +19,7 @@ impl ContextImpl {
         // In a real implementation, this would be configured based on domain_id
         let session = Arc::new(zenoh::open(zenoh::Config::default()).wait()?);
         let counter = Arc::new(ros_z::context::GlobalCounter::default());
-        let graph = Arc::new(ros_z::graph::Graph::new(session.clone()));
+        let graph = Arc::new(ros_z::graph::Graph::new(&session, domain_id)?);
         Ok(Self { session, domain_id, counter, graph })
     }
 

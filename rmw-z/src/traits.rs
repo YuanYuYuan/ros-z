@@ -216,7 +216,7 @@ macro_rules! rmw_impl_has_data_ptr {
                 self.data as *mut Self::CImplType
             }
             fn get_mut_data(&mut self) -> &mut *mut Self::CImplType {
-                &mut self.data
+                unsafe { &mut *((&mut self.data) as *mut _ as *mut *mut Self::CImplType) }
             }
         }
     };

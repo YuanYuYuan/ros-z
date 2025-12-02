@@ -1,11 +1,8 @@
 use std::ffi::CString;
-use std::sync::Arc;
 
-use crate::node::NodeImpl;
-use crate::qos::rmw_qos_to_ros_z_qos;
-use crate::traits::{BorrowImpl, OwnImpl, Waitable};
+use crate::traits::Waitable;
 use crate::ros::*;
-use zenoh::{Result, Session, sample::Sample};
+use zenoh::{Result, sample::Sample};
 use crate::rmw_impl_has_data_ptr;
 
 /// Publisher implementation for RMW
@@ -18,7 +15,7 @@ pub struct PublisherImpl {
 
 impl PublisherImpl {
     pub fn publish(&self, msg: *const crate::c_void) -> Result<()> {
-        let ros_msg = rcl_z::msg::RosMessage::new(msg, self.inner.entity.ts.clone());
+        let ros_msg = rcl_z::msg::RosMessage::new(msg as *const rcl_z::c_void, self.ts.clone());
         self.inner.publish(&ros_msg)
     }
 
@@ -36,13 +33,13 @@ pub struct SubscriptionImpl {
 }
 
 impl SubscriptionImpl {
-    pub fn take(&self, ros_message: *mut crate::c_void, taken: *mut bool) -> Result<(), zenoh::Error> {
+    pub fn take(&self, ros_message: *mut crate::c_void, taken: *mut bool) -> Result<()> {
         unsafe { *taken = false; }
         if let Ok(sample) = self.inner.queue.try_recv() {
             // Deserialize the sample payload into ros_message using ts
             // Assume the payload is CDR serialized
             let payload = sample.payload();
-            let bytes = payload.to_bytes();
+            let bytes = payload.to_bytes().to_vec();
             unsafe { self.ts.deserialize_message(&bytes, ros_message as *mut _) };
             unsafe { *taken = true; }
         }

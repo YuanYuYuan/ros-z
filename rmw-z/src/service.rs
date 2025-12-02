@@ -1,7 +1,6 @@
 use std::ffi::CString;
-use std::sync::Arc;
 
-use crate::traits::{BorrowImpl, OwnImpl, Waitable};
+use crate::traits::Waitable;
 use crate::ros::*;
 use crate::rmw_impl_has_data_ptr;
 

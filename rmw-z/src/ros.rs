@@ -9,6 +9,7 @@ pub const RMW_RET_TIMEOUT: u32 = 2;
 pub const RMW_RET_BAD_ALLOC: u32 = 10;
 pub const RMW_RET_INVALID_ARGUMENT: u32 = 11;
 pub const RMW_RET_UNSUPPORTED: u32 = 3;
+pub const RMW_RET_ALREADY_INIT: u32 = 12;
 
 // RCL return codes
 pub const RCL_RET_OK: i32 = 0;
@@ -317,6 +318,14 @@ pub struct rcutils_string_array_t {
     pub allocator: rcl_allocator_t,
 }
 
+// Names and types
+#[repr(C)]
+#[derive(Debug)]
+pub struct rmw_names_and_types_t {
+    pub names: rcutils_string_array_t,
+    pub types: *mut rcutils_string_array_t,
+}
+
 // Allocator
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -529,6 +538,19 @@ pub struct rcl_timer_t {
 #[derive(Debug)]
 pub struct rcl_timer_impl_t {
     _private: [u8; 0],
+}
+
+// Init options
+#[repr(C)]
+#[derive(Debug)]
+pub struct rmw_init_options_t {
+    pub instance_id: u64,
+    pub implementation_identifier: *const ::std::os::raw::c_char,
+    pub domain_id: usize,
+    pub security_options: *mut c_void,
+    pub localhost_only: u8,
+    pub allocator: rcl_allocator_t,
+    pub impl_: *mut c_void,
 }
 
 // Return types
