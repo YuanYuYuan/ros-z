@@ -18,8 +18,6 @@ pub mod service;
 pub mod traits;
 pub mod wait_set;
 
-
-
 /// Newtype wrapper for a C void. Only useful as a `*c_void`
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
@@ -45,11 +43,13 @@ pub const RMW_ZENOH_SERIALIZATION_FORMAT: &str = "cdr";
 
 // Remove the cxx extern block since we're implementing RMW directly
 
-use crate::traits::{BorrowImpl, OwnImpl, BorrowData, OwnData};
-use crate::ros::*;
-use rcl_z::impl_has_impl_ptr;
-use crate::pubsub::PublisherImpl;
-use rcl_z::type_support::MessageTypeSupport;
+use rcl_z::{impl_has_impl_ptr, type_support::MessageTypeSupport};
+
+use crate::{
+    pubsub::PublisherImpl,
+    ros::*,
+    traits::{BorrowData, BorrowImpl, OwnData, OwnImpl},
+};
 
 // Implement the actual RMW functions
 #[unsafe(no_mangle)]
@@ -77,8 +77,12 @@ pub extern "C" fn rmw_create_node(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let name_str = unsafe { std::ffi::CStr::from_ptr(name) }.to_str().unwrap_or("");
-    let namespace_str = unsafe { std::ffi::CStr::from_ptr(namespace_) }.to_str().unwrap_or("");
+    let name_str = unsafe { std::ffi::CStr::from_ptr(name) }
+        .to_str()
+        .unwrap_or("");
+    let namespace_str = unsafe { std::ffi::CStr::from_ptr(namespace_) }
+        .to_str()
+        .unwrap_or("");
 
     let node_impl = match context_impl.new_node(name, namespace_, context, std::ptr::null()) {
         Ok(impl_) => impl_,
@@ -120,7 +124,12 @@ pub extern "C" fn rmw_create_publisher(
     qos_profile: *const rmw_qos_profile_t,
     publisher_options: *const rmw_publisher_options_t,
 ) -> *mut rmw_publisher_t {
-    if node.is_null() || type_support.is_null() || topic_name.is_null() || qos_profile.is_null() || publisher_options.is_null() {
+    if node.is_null()
+        || type_support.is_null()
+        || topic_name.is_null()
+        || qos_profile.is_null()
+        || publisher_options.is_null()
+    {
         return std::ptr::null_mut();
     }
 
@@ -129,7 +138,9 @@ pub extern "C" fn rmw_create_publisher(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let topic_str = unsafe { std::ffi::CStr::from_ptr(topic_name) }.to_str().unwrap_or("");
+    let topic_str = unsafe { std::ffi::CStr::from_ptr(topic_name) }
+        .to_str()
+        .unwrap_or("");
     let ts = match unsafe { rcl_z::type_support::MessageTypeSupport::new(type_support) } {
         Ok(ts) => ts,
         Err(_) => return std::ptr::null_mut(),
@@ -208,7 +219,12 @@ pub extern "C" fn rmw_create_subscription(
     qos_policies: *const rmw_qos_profile_t,
     subscription_options: *const rmw_subscription_options_t,
 ) -> *mut rmw_subscription_t {
-    if node.is_null() || type_support.is_null() || topic_name.is_null() || qos_policies.is_null() || subscription_options.is_null() {
+    if node.is_null()
+        || type_support.is_null()
+        || topic_name.is_null()
+        || qos_policies.is_null()
+        || subscription_options.is_null()
+    {
         return std::ptr::null_mut();
     }
 
@@ -217,13 +233,17 @@ pub extern "C" fn rmw_create_subscription(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let topic_str = unsafe { std::ffi::CStr::from_ptr(topic_name) }.to_str().unwrap_or("");
+    let topic_str = unsafe { std::ffi::CStr::from_ptr(topic_name) }
+        .to_str()
+        .unwrap_or("");
     let ts = match unsafe { rcl_z::type_support::MessageTypeSupport::new(type_support) } {
         Ok(ts) => ts,
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let zsub_builder = node_impl.inner.create_sub::<rcl_z::msg::RosMessage>(topic_str);
+    let zsub_builder = node_impl
+        .inner
+        .create_sub::<rcl_z::msg::RosMessage>(topic_str);
     let qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { *qos_policies });
     let zsub_builder = zsub_builder.with_qos(qos);
     let zsub = match zsub_builder.build() {
@@ -252,7 +272,9 @@ pub extern "C" fn rmw_create_subscription(
 
     let subscription_ptr = Box::into_raw(subscription);
     unsafe {
-        (*subscription_ptr).assign_data(subscription_impl).unwrap_or(());
+        (*subscription_ptr)
+            .assign_data(subscription_impl)
+            .unwrap_or(());
     }
 
     subscription_ptr
@@ -301,7 +323,8 @@ pub extern "C" fn rmw_create_client(
     service_name: *const std::os::raw::c_char,
     qos_policies: *const rmw_qos_profile_t,
 ) -> *mut rmw_client_t {
-    if node.is_null() || type_support.is_null() || service_name.is_null() || qos_policies.is_null() {
+    if node.is_null() || type_support.is_null() || service_name.is_null() || qos_policies.is_null()
+    {
         return std::ptr::null_mut();
     }
 
@@ -352,7 +375,10 @@ pub extern "C" fn rmw_destroy_service(
 
 // Wait sets
 #[unsafe(no_mangle)]
-pub extern "C" fn rmw_create_wait_set(context: *mut rmw_context_t, max_conditions: usize) -> *mut rmw_wait_set_t {
+pub extern "C" fn rmw_create_wait_set(
+    context: *mut rmw_context_t,
+    max_conditions: usize,
+) -> *mut rmw_wait_set_t {
     if context.is_null() {
         return std::ptr::null_mut();
     }
@@ -400,7 +426,9 @@ pub extern "C" fn rmw_wait(
 
 // Guard conditions
 #[unsafe(no_mangle)]
-pub extern "C" fn rmw_create_guard_condition(context: *mut rmw_context_t) -> *mut rmw_guard_condition_t {
+pub extern "C" fn rmw_create_guard_condition(
+    context: *mut rmw_context_t,
+) -> *mut rmw_guard_condition_t {
     if context.is_null() {
         return std::ptr::null_mut();
     }
@@ -421,7 +449,9 @@ pub extern "C" fn rmw_create_guard_condition(context: *mut rmw_context_t) -> *mu
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rmw_destroy_guard_condition(guard_condition: *mut rmw_guard_condition_t) -> rmw_ret_t {
+pub extern "C" fn rmw_destroy_guard_condition(
+    guard_condition: *mut rmw_guard_condition_t,
+) -> rmw_ret_t {
     if guard_condition.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
@@ -431,7 +461,9 @@ pub extern "C" fn rmw_destroy_guard_condition(guard_condition: *mut rmw_guard_co
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rmw_trigger_guard_condition(guard_condition: *const rmw_guard_condition_t) -> rmw_ret_t {
+pub extern "C" fn rmw_trigger_guard_condition(
+    guard_condition: *const rmw_guard_condition_t,
+) -> rmw_ret_t {
     if guard_condition.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
