@@ -34,3 +34,15 @@ pub fn rmw_qos_to_ros_z_qos(qos: &rmw_qos_profile_t) -> ros_z::qos::QosProfile {
         liveliness_lease_duration: ros_z::qos::Duration::default(),
     }
 }
+
+// RMW QoS Functions
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_qos_profile_check_compatible(
+    publisher_profile: rmw_qos_profile_t,
+    subscription_profile: rmw_qos_profile_t,
+    compatibility: *mut rmw_qos_compatibility_type_t,
+    reason: *mut ::std::os::raw::c_char,
+    reason_size: usize,
+) -> rmw_ret_t {
+    todo!()
+}

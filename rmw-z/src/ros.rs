@@ -337,20 +337,11 @@ pub struct rcl_allocator_t {
     pub state: *mut c_void,
 }
 
-// ROS IDL types (simplified)
-#[repr(C)]
-#[derive(Debug)]
-pub struct rosidl_message_type_support_t {
-    pub typesupport_identifier: *const ::std::os::raw::c_char,
-    pub data: *mut c_void,
-}
+// ROS IDL types (from rcl_z)
+pub use rcl_z::ros::rosidl_message_type_support_t;
+pub use rcl_z::ros::rosidl_service_type_support_t;
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct rosidl_service_type_support_t {
-    pub request_members_: *const rosidl_message_type_support_t,
-    pub response_members_: *const rosidl_message_type_support_t,
-}
+// Additional RMW types needed - these will be defined locally since they're not available in rcl_z
 
 // RCL types (needed for compatibility)
 #[repr(C)]
@@ -556,3 +547,111 @@ pub struct rmw_init_options_t {
 // Return types
 pub type rmw_ret_t = i32;
 pub type rcl_ret_t = i32;
+
+// Additional types needed for RMW implementation
+#[repr(C)]
+#[derive(Debug)]
+pub struct rmw_network_flow_endpoint_array_t {
+    pub size: usize,
+    pub data: *mut rmw_network_flow_endpoint_t,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct rmw_network_flow_endpoint_t {
+    pub transport_protocol: *mut ::std::os::raw::c_char,
+    pub internet_address: *mut ::std::os::raw::c_char,
+    pub transport_port: u32,
+    pub flow_label: *mut ::std::os::raw::c_char,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct rmw_subscription_content_filter_options_t {
+    pub filter_expression: *mut ::std::os::raw::c_char,
+    pub expression_parameters: *mut rcutils_string_array_t,
+}
+
+// Additional missing types - defined locally since they're not available in rcl_z
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub enum rmw_qos_compatibility_type_t {
+    RMW_QOS_COMPATIBILITY_OK = 0,
+    RMW_QOS_COMPATIBILITY_WARNING = 1,
+    RMW_QOS_COMPATIBILITY_ERROR = 2,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct rmw_serialization_support_t {
+    pub serialize_message: Option<unsafe extern "C" fn(
+        *const ::std::os::raw::c_void,
+        *mut rcl_serialized_message_t,
+    ) -> rmw_ret_t>,
+    pub deserialize_message: Option<unsafe extern "C" fn(
+        *const rcl_serialized_message_t,
+        *mut ::std::os::raw::c_void,
+    ) -> rmw_ret_t>,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rosidl_message_bounds_t {
+    pub n_members: usize,
+    pub members: *const rosidl_message_member_t,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rosidl_message_member_t {
+    pub name: *const ::std::os::raw::c_char,
+    pub type_id: u32,
+    pub is_array: bool,
+    pub array_size: usize,
+    pub string_upper_bound: usize,
+    pub is_primitive: bool,
+}
+
+pub type rmw_subscription_new_message_callback_t = Option<unsafe extern "C" fn(
+    *const ::std::os::raw::c_void,
+    usize,
+) -> ::std::os::raw::c_int>;
+
+pub type rmw_service_new_request_callback_t = Option<unsafe extern "C" fn(
+    *const ::std::os::raw::c_void,
+    usize,
+) -> ::std::os::raw::c_int>;
+
+pub type rmw_client_new_response_callback_t = Option<unsafe extern "C" fn(
+    *const ::std::os::raw::c_void,
+    usize,
+) -> ::std::os::raw::c_int>;
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct rcldynamic_message_t {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub enum rmw_feature_t {
+    RMW_FEATURE_MESSAGE_INFO = 0,
+    RMW_FEATURE_PUBLISHER_LOAN = 1,
+    RMW_FEATURE_SUBSCRIPTION_LOAN = 2,
+    RMW_FEATURE_SERVICE_LOAN = 3,
+    RMW_FEATURE_CLIENT_LOAN = 4,
+    RMW_FEATURE_EVENT_MESSAGE = 5,
+    RMW_FEATURE_EVENT_SERVICE = 6,
+    RMW_FEATURE_EVENT_CLIENT = 7,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub enum rmw_log_severity_t {
+    RMW_LOG_SEVERITY_DEBUG = 0,
+    RMW_LOG_SEVERITY_INFO = 1,
+    RMW_LOG_SEVERITY_WARN = 2,
+    RMW_LOG_SEVERITY_ERROR = 3,
+    RMW_LOG_SEVERITY_FATAL = 4,
+}

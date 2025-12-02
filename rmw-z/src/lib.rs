@@ -43,11 +43,11 @@ pub const RMW_ZENOH_SERIALIZATION_FORMAT: &str = "cdr";
 
 // Remove the cxx extern block since we're implementing RMW directly
 
-use crate::{
-    pubsub::PublisherImpl,
-    ros::*,
-    traits::{BorrowData, BorrowImpl, OwnData, OwnImpl},
+use rcl_z::ros::{
+    rmw_event_callback_t, rmw_event_type_t, rmw_gid_t, rmw_topic_endpoint_info_array_t,
 };
+
+use crate::{pubsub::PublisherImpl, ros::*, traits::*};
 
 // Implement the actual RMW functions
 #[unsafe(no_mangle)]
@@ -58,156 +58,6 @@ pub extern "C" fn rmw_get_implementation_identifier() -> *const std::os::raw::c_
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_get_serialization_format() -> *const std::os::raw::c_char {
     RMW_ZENOH_SERIALIZATION_FORMAT.as_ptr() as *const std::os::raw::c_char
-}
-
-// Context initialization
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_init_options_init(
-    init_options: *mut rmw_init_options_t,
-    domain_id: usize,
-    allocator: rcl_allocator_t,
-) -> rmw_ret_t {
-    if init_options.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    // Initialize options structure
-    // For now, just mark as initialized
-    RMW_RET_OK as _
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_init_options_copy(
-    src: *const rmw_init_options_t,
-    dst: *mut rmw_init_options_t,
-) -> rmw_ret_t {
-    if src.is_null() || dst.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-    RMW_RET_OK as _
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_init_options_fini(init_options: *mut rmw_init_options_t) -> rmw_ret_t {
-    if init_options.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-    RMW_RET_OK as _
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_init(
-    options: *const rmw_init_options_t,
-    context: *mut rmw_context_t,
-) -> rmw_ret_t {
-    if options.is_null() || context.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    // Check if already initialized
-    if !unsafe { (*context).impl_.is_null() } {
-        return RMW_RET_ALREADY_INIT as _;
-    }
-
-    // Create context implementation
-    // TODO: Extract domain_id from options
-    let domain_id = 0;
-    let context_impl = match context::ContextImpl::new(domain_id) {
-        Ok(impl_) => impl_,
-        Err(e) => {
-            tracing::error!("Failed to create context: {}", e);
-            return RMW_RET_ERROR as _;
-        }
-    };
-
-    // Assign implementation
-    match (context as *mut rmw_context_t).assign_impl(context_impl) {
-        Ok(_) => {
-            unsafe { (*context).instance_id = 1 }; // TODO: proper instance ID
-            RMW_RET_OK as _
-        }
-        Err(_) => RMW_RET_ERROR as _,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_shutdown(context: *mut rmw_context_t) -> rmw_ret_t {
-    if context.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    // Shutdown happens implicitly when context is finalized
-    RMW_RET_OK as _
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_context_fini(context: *mut rmw_context_t) -> rmw_ret_t {
-    if context.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    if unsafe { (*context).impl_.is_null() } {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    // Own and drop the implementation
-    match (context as *mut rmw_context_t).own_impl() {
-        Ok(_) => RMW_RET_OK as _,
-        Err(_) => RMW_RET_ERROR as _,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_create_node(
-    context: *mut rmw_context_t,
-    name: *const std::os::raw::c_char,
-    namespace_: *const std::os::raw::c_char,
-) -> *mut rmw_node_t {
-    if context.is_null() || name.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let context_impl = match context.borrow_impl() {
-        Ok(impl_) => impl_,
-        Err(_) => return std::ptr::null_mut(),
-    };
-
-    let name_str = unsafe { std::ffi::CStr::from_ptr(name) }
-        .to_str()
-        .unwrap_or("");
-    let namespace_str = unsafe { std::ffi::CStr::from_ptr(namespace_) }
-        .to_str()
-        .unwrap_or("");
-
-    let node_impl = match context_impl.new_node(name, namespace_, context, std::ptr::null()) {
-        Ok(impl_) => impl_,
-        Err(_) => return std::ptr::null_mut(),
-    };
-
-    let node = Box::new(rmw_node_t {
-        implementation_identifier: RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
-        data: std::ptr::null_mut(),
-        name: name as *const _,
-        namespace_: namespace_ as *const _,
-        context,
-    });
-
-    let node_ptr = Box::into_raw(node);
-    unsafe {
-        (*node_ptr).assign_data(node_impl).unwrap_or(());
-    }
-
-    node_ptr
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_destroy_node(node: *mut rmw_node_t) -> rmw_ret_t {
-    if node.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    drop(unsafe { Box::from_raw(node) });
-    RMW_RET_OK as _
 }
 
 // Publishers
@@ -228,7 +78,7 @@ pub extern "C" fn rmw_create_publisher(
         return std::ptr::null_mut();
     }
 
-    let node_impl = match unsafe { node.borrow_impl() } {
+    let node_impl = match unsafe { node.borrow_data() } {
         Ok(impl_) => impl_,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -241,9 +91,9 @@ pub extern "C" fn rmw_create_publisher(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let type_info = ts.get_type_info();
-    let zpub_builder = node_impl.inner.create_pub_impl(topic_str, Some(type_info));
-    let zpub_builder = zpub_builder.with_serdes::<rcl_z::msg::RosSerdes>();
+    let zpub_builder = node_impl
+        .inner
+        .create_pub::<rcl_z::msg::RosMessage>(topic_str);
     let qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { *qos_profile });
     let zpub_builder = zpub_builder.with_qos(qos);
     let zpub = match zpub_builder.build() {
@@ -261,6 +111,7 @@ pub extern "C" fn rmw_create_publisher(
         ts,
         topic: topic_cstr,
         options: unsafe { *publisher_options },
+        qos: unsafe { *qos_profile },
     };
 
     let publisher = Box::new(rmw_publisher_t {
@@ -272,7 +123,7 @@ pub extern "C" fn rmw_create_publisher(
 
     let publisher_ptr = Box::into_raw(publisher);
     unsafe {
-        (*publisher_ptr).assign_data(publisher_impl).unwrap_or(());
+        (*publisher_ptr).data = Box::into_raw(Box::new(publisher_impl)) as *mut _;
     }
 
     publisher_ptr
@@ -366,6 +217,7 @@ pub extern "C" fn rmw_create_subscription(
         ts,
         topic: topic_cstr,
         options: unsafe { *subscription_options },
+        qos: unsafe { *qos_policies },
     };
 
     let subscription = Box::new(rmw_subscription_t {
@@ -377,9 +229,7 @@ pub extern "C" fn rmw_create_subscription(
 
     let subscription_ptr = Box::into_raw(subscription);
     unsafe {
-        (*subscription_ptr)
-            .assign_data(subscription_impl)
-            .unwrap_or(());
+        (*subscription_ptr).data = Box::into_raw(Box::new(subscription_impl)) as *mut _;
     }
 
     subscription_ptr
@@ -473,7 +323,7 @@ pub extern "C" fn rmw_create_client(
 
     let client_ptr = Box::into_raw(client);
     unsafe {
-        (*client_ptr).assign_data(client_impl).unwrap_or(());
+        client_ptr.assign_data(client_impl).unwrap_or(());
     }
 
     client_ptr
@@ -545,7 +395,7 @@ pub extern "C" fn rmw_create_service(
 
     let service_ptr = Box::into_raw(service);
     unsafe {
-        (*service_ptr).assign_data(service_impl).unwrap_or(());
+        service_ptr.assign_data(service_impl).unwrap_or(());
     }
 
     service_ptr
@@ -561,249 +411,6 @@ pub extern "C" fn rmw_destroy_service(
     }
 
     drop(unsafe { Box::from_raw(service) });
-    RMW_RET_OK as _
-}
-
-// Wait sets
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_create_wait_set(
-    context: *mut rmw_context_t,
-    max_conditions: usize,
-) -> *mut rmw_wait_set_t {
-    if context.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let wait_set_impl = crate::wait_set::WaitSetImpl::new(max_conditions);
-    let wait_set = Box::new(rmw_wait_set_t {
-        impl_: std::ptr::null_mut(),
-    });
-
-    let wait_set_ptr = Box::into_raw(wait_set);
-    unsafe {
-        (*wait_set_ptr).assign_impl(wait_set_impl).unwrap_or(());
-    }
-
-    wait_set_ptr
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_destroy_wait_set(wait_set: *mut rmw_wait_set_t) -> rmw_ret_t {
-    if wait_set.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    drop(unsafe { Box::from_raw(wait_set) });
-    RMW_RET_OK as _
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_wait(
-    subscriptions: *mut rmw_subscriptions_t,
-    guard_conditions: *mut rmw_guard_conditions_t,
-    services: *mut rmw_services_t,
-    clients: *mut rmw_clients_t,
-    events: *mut rmw_events_t,
-    wait_set: *mut rmw_wait_set_t,
-    wait_timeout: *const rmw_time_t,
-) -> rmw_ret_t {
-    if wait_set.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    let wait_set_impl = match wait_set.borrow_mut_impl() {
-        Ok(impl_) => impl_,
-        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
-    };
-
-    // Clear the wait set
-    wait_set_impl.subscriptions.clear();
-    wait_set_impl.guard_conditions.clear();
-    wait_set_impl.services.clear();
-    wait_set_impl.clients.clear();
-    wait_set_impl.events.clear();
-
-    // Add subscriptions to wait set
-    if !subscriptions.is_null() {
-        let sub_array = unsafe { &*subscriptions };
-        for i in 0..sub_array.subscriber_count {
-            let sub = unsafe { *sub_array.subscribers.add(i) };
-            if !sub.is_null() {
-                wait_set_impl.subscriptions.push(sub);
-            }
-        }
-    }
-
-    // Add guard conditions
-    if !guard_conditions.is_null() {
-        let gc_array = unsafe { &*guard_conditions };
-        for i in 0..gc_array.guard_condition_count {
-            let gc = unsafe { *gc_array.guard_conditions.add(i) };
-            if !gc.is_null() {
-                wait_set_impl.guard_conditions.push(gc);
-            }
-        }
-    }
-
-    // Add services
-    if !services.is_null() {
-        let srv_array = unsafe { &*services };
-        for i in 0..srv_array.service_count {
-            let srv = unsafe { *srv_array.services.add(i) };
-            if !srv.is_null() {
-                wait_set_impl.services.push(srv);
-            }
-        }
-    }
-
-    // Add clients
-    if !clients.is_null() {
-        let cli_array = unsafe { &*clients };
-        for i in 0..cli_array.client_count {
-            let cli = unsafe { *cli_array.clients.add(i) };
-            if !cli.is_null() {
-                wait_set_impl.clients.push(cli);
-            }
-        }
-    }
-
-    // Wait for ready entities
-    let timeout = if wait_timeout.is_null() {
-        rmw_time_t { sec: -1, nsec: 0 }
-    } else {
-        unsafe { *wait_timeout }
-    };
-
-    let ready = wait_set_impl.wait(&timeout);
-
-    if ready {
-        // Update arrays to only contain ready entities
-        if !subscriptions.is_null() {
-            let sub_array = unsafe { &mut *subscriptions };
-            let mut ready_count = 0;
-            for i in 0..sub_array.subscriber_count {
-                let sub = unsafe { *sub_array.subscribers.add(i) };
-                if !sub.is_null() {
-                    if let Ok(sub_impl) = sub.borrow_data() {
-                        if sub_impl.is_ready() {
-                            unsafe {
-                                *sub_array.subscribers.add(ready_count) = sub;
-                            }
-                            ready_count += 1;
-                        }
-                    }
-                }
-            }
-            // Null out the rest
-            for i in ready_count..sub_array.subscriber_count {
-                unsafe {
-                    *sub_array.subscribers.add(i) = std::ptr::null_mut();
-                }
-            }
-        }
-
-        // Similar for services
-        if !services.is_null() {
-            let srv_array = unsafe { &mut *services };
-            let mut ready_count = 0;
-            for i in 0..srv_array.service_count {
-                let srv = unsafe { *srv_array.services.add(i) };
-                if !srv.is_null() {
-                    if let Ok(srv_impl) = srv.borrow_data() {
-                        if srv_impl.is_ready() {
-                            unsafe {
-                                *srv_array.services.add(ready_count) = srv;
-                            }
-                            ready_count += 1;
-                        }
-                    }
-                }
-            }
-            for i in ready_count..srv_array.service_count {
-                unsafe {
-                    *srv_array.services.add(i) = std::ptr::null_mut();
-                }
-            }
-        }
-
-        // Similar for clients
-        if !clients.is_null() {
-            let cli_array = unsafe { &mut *clients };
-            let mut ready_count = 0;
-            for i in 0..cli_array.client_count {
-                let cli = unsafe { *cli_array.clients.add(i) };
-                if !cli.is_null() {
-                    if let Ok(cli_impl) = cli.borrow_data() {
-                        if cli_impl.is_ready() {
-                            unsafe {
-                                *cli_array.clients.add(ready_count) = cli;
-                            }
-                            ready_count += 1;
-                        }
-                    }
-                }
-            }
-            for i in ready_count..cli_array.client_count {
-                unsafe {
-                    *cli_array.clients.add(i) = std::ptr::null_mut();
-                }
-            }
-        }
-
-        RMW_RET_OK as _
-    } else {
-        RMW_RET_TIMEOUT as _
-    }
-}
-
-// Guard conditions
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_create_guard_condition(
-    context: *mut rmw_context_t,
-) -> *mut rmw_guard_condition_t {
-    if context.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let gc_impl = crate::guard_condition::GuardConditionImpl::new();
-    let gc = Box::new(rmw_guard_condition_t {
-        implementation_identifier: RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
-        data: std::ptr::null_mut(),
-        context,
-    });
-
-    let gc_ptr = Box::into_raw(gc);
-    unsafe {
-        (*gc_ptr).assign_data(gc_impl).unwrap_or(());
-    }
-
-    gc_ptr
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_destroy_guard_condition(
-    guard_condition: *mut rmw_guard_condition_t,
-) -> rmw_ret_t {
-    if guard_condition.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    drop(unsafe { Box::from_raw(guard_condition) });
-    RMW_RET_OK as _
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_trigger_guard_condition(
-    guard_condition: *const rmw_guard_condition_t,
-) -> rmw_ret_t {
-    if guard_condition.is_null() {
-        return RMW_RET_INVALID_ARGUMENT as _;
-    }
-
-    if let Ok(mut gc_impl) = (guard_condition as *mut rmw_guard_condition_t).borrow_mut_data() {
-        gc_impl.trigger();
-    }
-
     RMW_RET_OK as _
 }
 
@@ -905,4 +512,349 @@ pub extern "C" fn rmw_count_subscribers(
         *count = 0;
     }
     RMW_RET_OK as _
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_node_get_graph_guard_condition(
+    node: *const rmw_node_t,
+) -> *const rmw_guard_condition_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_count_clients(
+    node: *const rmw_node_t,
+    service_name: *const std::os::raw::c_char,
+    count: *mut usize,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_count_services(
+    node: *const rmw_node_t,
+    service_name: *const std::os::raw::c_char,
+    count: *mut usize,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_publishers_info_by_topic(
+    node: *const rmw_node_t,
+    allocator: *const rcl_allocator_t,
+    topic_name: *const std::os::raw::c_char,
+    no_mangle: bool,
+    publishers_info: *mut rmw_topic_endpoint_info_array_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_subscriptions_info_by_topic(
+    node: *const rmw_node_t,
+    allocator: *const rcl_allocator_t,
+    topic_name: *const std::os::raw::c_char,
+    no_mangle: bool,
+    subscriptions_info: *mut rmw_topic_endpoint_info_array_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_subscriber_names_and_types_by_node(
+    node: *const rmw_node_t,
+    allocator: *const rcl_allocator_t,
+    node_name: *const std::os::raw::c_char,
+    node_namespace: *const std::os::raw::c_char,
+    no_demangle: bool,
+    topic_names_and_types: *mut rmw_names_and_types_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_publisher_names_and_types_by_node(
+    node: *const rmw_node_t,
+    allocator: *const rcl_allocator_t,
+    node_name: *const std::os::raw::c_char,
+    node_namespace: *const std::os::raw::c_char,
+    no_demangle: bool,
+    topic_names_and_types: *mut rmw_names_and_types_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_service_names_and_types_by_node(
+    node: *const rmw_node_t,
+    allocator: *const rcl_allocator_t,
+    node_name: *const std::os::raw::c_char,
+    node_namespace: *const std::os::raw::c_char,
+    service_names_and_types: *mut rmw_names_and_types_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_client_names_and_types_by_node(
+    node: *const rmw_node_t,
+    allocator: *const rcl_allocator_t,
+    node_name: *const std::os::raw::c_char,
+    node_namespace: *const std::os::raw::c_char,
+    client_names_and_types: *mut rmw_names_and_types_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_serialize(
+    ros_message: *const c_void,
+    type_support: *const rosidl_message_type_support_t,
+    serialized_message: *mut rcl_serialized_message_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_deserialize(
+    serialized_message: *const rcl_serialized_message_t,
+    type_support: *const rosidl_message_type_support_t,
+    ros_message: *mut c_void,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_serialization_support_init(
+    serialization_support: *mut rmw_serialization_support_t,
+    allocator: *const rcl_allocator_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_borrow_loaned_message(
+    publisher: *const rmw_publisher_t,
+    type_support: *const rosidl_message_type_support_t,
+    ros_message: *mut *mut c_void,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_return_loaned_message_from_publisher(
+    publisher: *const rmw_publisher_t,
+    loaned_message: *mut c_void,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_return_loaned_message_from_subscription(
+    subscription: *const rmw_subscription_t,
+    loaned_message: *mut c_void,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_serialized_message_size(
+    type_support: *const rosidl_message_type_support_t,
+    message_bounds: *const rosidl_message_bounds_t,
+    size: *mut usize,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_publisher_event_init(
+    rmw_event: *mut rmw_event_t,
+    publisher: *const rmw_publisher_t,
+    event_type: rmw_event_type_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_subscription_event_init(
+    rmw_event: *mut rmw_event_t,
+    subscription: *const rmw_subscription_t,
+    event_type: rmw_event_type_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_event_set_callback(
+    event: *mut rmw_event_t,
+    callback: rmw_event_callback_t,
+    user_data: *mut c_void,
+    allocator: *const rcl_allocator_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_event_type_is_supported(event_type: rmw_event_type_t) -> bool {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_take_event(
+    event: *const rmw_event_t,
+    event_info: *mut c_void,
+    taken: *mut bool,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_subscription_set_on_new_message_callback(
+    subscription: *mut rmw_subscription_t,
+    callback: rmw_subscription_new_message_callback_t,
+    user_data: *mut c_void,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_service_set_on_new_request_callback(
+    service: *mut rmw_service_t,
+    callback: rmw_service_new_request_callback_t,
+    user_data: *mut c_void,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_client_set_on_new_response_callback(
+    client: *mut rmw_client_t,
+    callback: rmw_client_new_response_callback_t,
+    user_data: *mut c_void,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_qos_profile_check_compatible(
+    publisher_profile: rmw_qos_profile_t,
+    subscription_profile: rmw_qos_profile_t,
+    compatibility: *mut rmw_qos_compatibility_type_t,
+    reason: *mut ::std::os::raw::c_char,
+    reason_size: usize,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_gid_for_publisher(
+    publisher: *const rmw_publisher_t,
+    gid: *mut rmw_gid_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_gid_for_client(
+    client: *const rmw_client_t,
+    gid: *mut rmw_gid_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_compare_gids_equal(
+    gid1: *const rmw_gid_t,
+    gid2: *const rmw_gid_t,
+    result: *mut bool,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_service_server_is_available(
+    node: *const rmw_node_t,
+    client: *const rmw_client_t,
+    is_available: *mut bool,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_init_publisher_allocation(
+    type_support: *const rosidl_message_type_support_t,
+    message_bounds: *const rosidl_message_bounds_t,
+    allocation: *mut rmw_publisher_allocation_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_fini_publisher_allocation(
+    allocation: *mut rmw_publisher_allocation_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_init_subscription_allocation(
+    type_support: *const rosidl_message_type_support_t,
+    message_bounds: *const rosidl_message_bounds_t,
+    allocation: *mut rmw_subscription_allocation_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_fini_subscription_allocation(
+    allocation: *mut rmw_subscription_allocation_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_take_dynamic_message(
+    subscription: *const rmw_subscription_t,
+    dynamic_message: *mut rcldynamic_message_t,
+    taken: *mut bool,
+    allocation: *mut rmw_subscription_allocation_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_take_dynamic_message_with_info(
+    subscription: *const rmw_subscription_t,
+    dynamic_message: *mut rcldynamic_message_t,
+    taken: *mut bool,
+    message_info: *mut rmw_message_info_t,
+    allocation: *mut rmw_subscription_allocation_t,
+) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_feature_supported(feature: rmw_feature_t) -> bool {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_set_log_severity(severity: rmw_log_severity_t) -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_test_isolation_start() -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_test_isolation_stop() -> rmw_ret_t {
+    todo!()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_zenoh_get_session(context: *const rmw_context_t) -> *const c_void {
+    todo!()
 }
