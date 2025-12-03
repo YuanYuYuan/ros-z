@@ -142,11 +142,12 @@ impl MessageTypeSupport {
         unsafe { get_serialized_size(self.as_ref(), ros_message) }
     }
 
-    pub unsafe fn deserialize_message(&self, data: &Vec<u8>, ros_message: *mut c_void) {
+    pub unsafe fn deserialize_message(&self, data: &Vec<u8>, ros_message: *mut c_void) -> bool {
         let res = unsafe { deserialize_message(self.as_ref(), data, ros_message) };
         if !res {
             tracing::warn!("Failed to run deserialize_message");
         }
+        res
     }
 
     pub fn get_type_prefix(&self) -> String {

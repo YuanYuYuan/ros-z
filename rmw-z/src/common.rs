@@ -11,7 +11,6 @@ pub extern "C" fn rcl_convert_rmw_ret_to_rcl_ret(rmw_ret: u32) -> rcl_ret_t {
         RMW_RET_INVALID_ARGUMENT => RCL_RET_INVALID_ARGUMENT as _,
         RMW_RET_BAD_ALLOC => RCL_RET_BAD_ALLOC as _,
         RMW_RET_UNSUPPORTED => RCL_RET_UNSUPPORTED as _,
-        RMW_RET_NODE_NAME_NON_EXISTENT => RCL_RET_NODE_NAME_NON_EXISTENT as _,
         // Default: all other RMW errors map to RCL_RET_ERROR
         _ => RCL_RET_ERROR as _,
     }

@@ -6,7 +6,6 @@ use zenoh::Session;
 use crate::rmw_impl_has_data_ptr;
 use ros_z::Builder;
 use crate::traits::*;
-use crate::RMW_ZENOH_IDENTIFIER;
 
 /// Node implementation for RMW
 pub struct NodeImpl {
@@ -72,10 +71,10 @@ pub extern "C" fn rmw_create_node(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let name_str = unsafe { std::ffi::CStr::from_ptr(name) }
+    let _name_str = unsafe { std::ffi::CStr::from_ptr(name) }
         .to_str()
         .unwrap_or("");
-    let namespace_str = unsafe { std::ffi::CStr::from_ptr(namespace_) }
+    let _namespace_str = unsafe { std::ffi::CStr::from_ptr(namespace_) }
         .to_str()
         .unwrap_or("");
 
@@ -106,24 +105,14 @@ pub extern "C" fn rmw_destroy_node(node: *mut rmw_node_t) -> rmw_ret_t {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
+    // Drop the implementation data
+    let _ = node.own_data();
+
     drop(unsafe { Box::from_raw(node) });
     RMW_RET_OK as _
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn rmw_node_get_graph_guard_condition(node: *const rmw_node_t) -> *const rmw_guard_condition_t {
-    if node.is_null() {
-        return std::ptr::null();
-    }
 
-    let node_impl = match unsafe { node.borrow_data() } {
-        Ok(impl_) => impl_,
-        Err(_) => return std::ptr::null(),
-    };
-
-    // For now, return null - this will be implemented with guard conditions
-    std::ptr::null()
-}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_get_node_names(
@@ -135,7 +124,7 @@ pub extern "C" fn rmw_get_node_names(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let node_impl = match unsafe { node.borrow_data() } {
+    let node_impl = match node.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };

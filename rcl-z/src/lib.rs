@@ -10,7 +10,7 @@ pub mod event;
 mod qos;
 pub mod ros;
 mod traits;
-mod utils;
+pub mod utils;
 
 pub mod arguments;
 pub mod common;

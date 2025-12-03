@@ -1,59 +1,6 @@
-use crate::traits::{Waitable, BorrowData, OwnData, BorrowImpl, OwnImpl};
+use crate::traits::{Waitable, BorrowData, OwnImpl};
 use crate::ros::*;
-use crate::rmw_impl_has_impl_ptr;
-
-/// Wait set implementation for RMW
-pub struct WaitSetImpl {
-    pub subscriptions: Vec<*mut rmw_subscription_t>,
-    pub guard_conditions: Vec<*mut rmw_guard_condition_t>,
-    pub services: Vec<*mut rmw_service_t>,
-    pub clients: Vec<*mut rmw_client_t>,
-    pub events: Vec<*mut rmw_event_t>,
-}
-
-impl WaitSetImpl {
-    pub fn new(max_conditions: usize) -> Self {
-        Self {
-            subscriptions: Vec::with_capacity(max_conditions),
-            guard_conditions: Vec::with_capacity(max_conditions),
-            services: Vec::with_capacity(max_conditions),
-            clients: Vec::with_capacity(max_conditions),
-            events: Vec::with_capacity(max_conditions),
-        }
-    }
-
-    pub fn wait(&self, timeout: &rmw_time_t) -> bool {
-        // Simple implementation - check if any waitable is ready
-        for sub in &self.subscriptions {
-            if let Ok(sub_impl) = (*sub).borrow_data() {
-                if sub_impl.is_ready() {
-                    return true;
-                }
-            }
-        }
-        for gc in &self.guard_conditions {
-            // Guard conditions are always ready if triggered
-            // For simplicity, assume not ready
-        }
-        for srv in &self.services {
-            if let Ok(srv_impl) = (*srv).borrow_data() {
-                if srv_impl.is_ready() {
-                    return true;
-                }
-            }
-        }
-        for cli in &self.clients {
-            if let Ok(cli_impl) = (*cli).borrow_data() {
-                if cli_impl.is_ready() {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-}
-
-rmw_impl_has_impl_ptr!(rmw_wait_set_t, rmw_wait_set_impl_t, WaitSetImpl);
+use crate::WaitSetImpl;
 
 // RMW Wait Set Functions
 #[unsafe(no_mangle)]
@@ -71,9 +18,7 @@ pub extern "C" fn rmw_create_wait_set(
     });
 
     let wait_set_ptr = Box::into_raw(wait_set);
-    unsafe {
-        wait_set_ptr.assign_impl(wait_set_impl).unwrap_or(());
-    }
+    wait_set_ptr.assign_impl(wait_set_impl).unwrap_or(());
 
     wait_set_ptr
 }
@@ -94,7 +39,7 @@ pub extern "C" fn rmw_wait(
     guard_conditions: *mut rmw_guard_conditions_t,
     services: *mut rmw_services_t,
     clients: *mut rmw_clients_t,
-    events: *mut rmw_events_t,
+    _events: *mut rmw_events_t,
     wait_set: *mut rmw_wait_set_t,
     wait_timeout: *const rmw_time_t,
 ) -> rmw_ret_t {
@@ -237,6 +182,30 @@ pub extern "C" fn rmw_wait(
             for i in ready_count..cli_array.client_count {
                 unsafe {
                     *cli_array.clients.add(i) = std::ptr::null_mut();
+                }
+            }
+        }
+
+        // Similar for guard conditions
+        if !guard_conditions.is_null() {
+            let gc_array = unsafe { &mut *guard_conditions };
+            let mut ready_count = 0;
+            for i in 0..gc_array.guard_condition_count {
+                let gc = unsafe { *gc_array.guard_conditions.add(i) };
+                if !gc.is_null() {
+                    if let Ok(gc_impl) = gc.borrow_data() {
+                        if gc_impl.is_ready() {
+                            unsafe {
+                                *gc_array.guard_conditions.add(ready_count) = gc;
+                            }
+                            ready_count += 1;
+                        }
+                    }
+                }
+            }
+            for i in ready_count..gc_array.guard_condition_count {
+                unsafe {
+                    *gc_array.guard_conditions.add(i) = std::ptr::null_mut();
                 }
             }
         }

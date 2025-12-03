@@ -1,4 +1,5 @@
 use std::ffi::CString;
+use std::sync::Mutex;
 
 use crate::traits::{Waitable, BorrowData, OwnData};
 use crate::ros::*;
@@ -13,6 +14,8 @@ pub struct ClientImpl {
     pub options: rmw_client_options_t,
     pub request_ts: rcl_z::type_support::ServiceTypeSupport,
     pub response_ts: rcl_z::type_support::ServiceTypeSupport,
+    pub callback: Mutex<rmw_client_new_response_callback_t>,
+    pub callback_user_data: Mutex<*const c_void>,
 }
 
 impl ClientImpl {
@@ -67,6 +70,9 @@ pub struct ServiceImpl {
     pub service_name: CString,
     pub request_ts: rcl_z::type_support::ServiceTypeSupport,
     pub response_ts: rcl_z::type_support::ServiceTypeSupport,
+    pub qos: rmw_qos_profile_t,
+    pub callback: Mutex<rmw_service_new_request_callback_t>,
+    pub callback_user_data: Mutex<*const c_void>,
 }
 
 impl ServiceImpl {
@@ -103,7 +109,7 @@ impl ServiceImpl {
             // Fill request_header with sequence info
             if !request_header.is_null() {
                 unsafe {
-                    (*request_header).request_id.sequence_number = key.sn as i64;
+                    (*request_header).request_id.sequence_number = key.sn;
                     // Copy GID from key
                     for (i, &byte) in key.gid.iter().enumerate() {
                         if i < 16 {
@@ -128,9 +134,7 @@ impl ServiceImpl {
         // Extract QueryKey from request_header
         let key = unsafe {
             let mut gid = [0u8; 16];
-            for i in 0..16 {
-                gid[i] = (*request_header).writer_guid[i];
-            }
+            gid.copy_from_slice(&(*request_header).writer_guid);
             ros_z::service::QueryKey {
                 gid,
                 sn: (*request_header).sequence_number,
@@ -173,7 +177,7 @@ pub extern "C" fn rmw_take_request(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let service_impl = match unsafe { (service as *mut rmw_service_t).borrow_mut_data() } {
+    let service_impl = match (service as *mut rmw_service_t).borrow_mut_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -197,7 +201,7 @@ pub extern "C" fn rmw_send_response(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let service_impl = match unsafe { (service as *mut rmw_service_t).borrow_mut_data() } {
+    let service_impl = match (service as *mut rmw_service_t).borrow_mut_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -222,7 +226,7 @@ pub extern "C" fn rmw_send_request(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let client_impl = match unsafe { client.borrow_data() } {
+    let client_impl = match client.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -247,7 +251,7 @@ pub extern "C" fn rmw_take_response(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let client_impl = match unsafe { client.borrow_data() } {
+    let client_impl = match client.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -259,4 +263,33 @@ pub extern "C" fn rmw_take_response(
             RMW_RET_ERROR as _
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_client_request_publisher_get_actual_qos(
+    client: *const rmw_client_t,
+    qos: *mut rmw_qos_profile_t,
+) -> rmw_ret_t {
+    if client.is_null() || qos.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    let client_impl = match client.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    unsafe {
+        *qos = client_impl.options.qos;
+    }
+
+    RMW_RET_OK as _
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_client_response_subscription_get_actual_qos(
+    client: *const rmw_client_t,
+    qos: *mut rmw_qos_profile_t,
+) -> rmw_ret_t {
+    rmw_client_request_publisher_get_actual_qos(client, qos)
 }

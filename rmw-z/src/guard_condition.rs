@@ -1,26 +1,35 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use crate::ros::*;
 use crate::rmw_impl_has_data_ptr;
 use crate::traits::*;
+use rcl_z::utils::Notifier;
 
 /// Guard condition implementation for RMW
+#[derive(Debug, Default)]
 pub struct GuardConditionImpl {
-    pub triggered: AtomicBool,
+    pub(crate) notifier: Option<Arc<Notifier>>,
+    pub(crate) triggered: bool,
 }
 
 impl GuardConditionImpl {
-    pub fn new() -> Self {
-        Self {
-            triggered: AtomicBool::new(false),
-        }
+    pub(crate) fn trigger(&mut self) -> Result<(), ()> {
+        let notifier = self
+            .notifier
+            .as_ref()
+            .ok_or(())?;
+        self.triggered = true;
+        notifier.notify_all();
+        Ok(())
     }
 
-    pub fn trigger(&mut self) {
-        self.triggered.store(true, Ordering::SeqCst);
+    pub fn reset(&mut self) {
+        self.triggered = false;
     }
+}
 
-    pub fn is_triggered(&self) -> bool {
-        self.triggered.load(Ordering::SeqCst)
+impl crate::traits::Waitable for GuardConditionImpl {
+    fn is_ready(&self) -> bool {
+        self.triggered
     }
 }
 
@@ -35,7 +44,16 @@ pub extern "C" fn rmw_create_guard_condition(
         return std::ptr::null_mut();
     }
 
-    let gc_impl = GuardConditionImpl::new();
+    let context_impl = match context.borrow_impl() {
+        Ok(impl_) => impl_,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let notifier = Some(context_impl.share_notifier());
+    let gc_impl = GuardConditionImpl {
+        notifier,
+        triggered: false,
+    };
     let gc = Box::new(rmw_guard_condition_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         data: std::ptr::null_mut(),
@@ -43,9 +61,7 @@ pub extern "C" fn rmw_create_guard_condition(
     });
 
     let gc_ptr = Box::into_raw(gc);
-    unsafe {
-        gc_ptr.assign_data(gc_impl).unwrap_or(());
-    }
+    gc_ptr.assign_data(gc_impl).unwrap_or(());
 
     gc_ptr
 }
@@ -57,6 +73,9 @@ pub extern "C" fn rmw_destroy_guard_condition(
     if guard_condition.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
+
+    // Drop the implementation data
+    let _ = guard_condition.own_data();
 
     drop(unsafe { Box::from_raw(guard_condition) });
     RMW_RET_OK as _
@@ -70,8 +89,8 @@ pub extern "C" fn rmw_trigger_guard_condition(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    if let Ok(mut gc_impl) = (guard_condition as *mut rmw_guard_condition_t).borrow_mut_data() {
-        gc_impl.trigger();
+    if let Ok(gc_impl) = (guard_condition as *mut rmw_guard_condition_t).borrow_mut_data() {
+        let _ = gc_impl.trigger();
     }
 
     RMW_RET_OK as _

@@ -44,5 +44,24 @@ pub extern "C" fn rmw_qos_profile_check_compatible(
     reason: *mut ::std::os::raw::c_char,
     reason_size: usize,
 ) -> rmw_ret_t {
-    todo!()
+    if compatibility.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+    if !reason.is_null() && reason_size == 0 {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+    // Initialize reason buffer
+    if !reason.is_null() && reason_size > 0 {
+        unsafe { *reason = 0; }
+    }
+    // Check for specific incompatibility
+    if publisher_profile.durability == RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
+        && subscription_profile.durability == RMW_QOS_POLICY_DURABILITY_VOLATILE {
+        unsafe { *compatibility = rmw_qos_compatibility_type_t::RMW_QOS_COMPATIBILITY_WARNING; }
+        // For simplicity, don't append to reason
+        RMW_RET_OK as _
+    } else {
+        unsafe { *compatibility = rmw_qos_compatibility_type_t::RMW_QOS_COMPATIBILITY_OK; }
+        RMW_RET_OK as _
+    }
 }

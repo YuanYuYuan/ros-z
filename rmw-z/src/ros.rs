@@ -1,6 +1,7 @@
 #![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, unused)]
 
 use std::ffi::c_void;
+use rcl_z::ros::rmw_event_type_t;
 
 // RMW return codes
 pub const RMW_RET_OK: u32 = 0;
@@ -10,6 +11,7 @@ pub const RMW_RET_BAD_ALLOC: u32 = 10;
 pub const RMW_RET_INVALID_ARGUMENT: u32 = 11;
 pub const RMW_RET_UNSUPPORTED: u32 = 3;
 pub const RMW_RET_ALREADY_INIT: u32 = 12;
+pub const RMW_RET_INCORRECT_RMW_IMPLEMENTATION: u32 = 13;
 
 // RCL return codes
 pub const RCL_RET_OK: i32 = 0;
@@ -81,7 +83,10 @@ impl Default for rmw_qos_profile_t {
 #[repr(C)]
 #[derive(Debug)]
 pub struct rmw_context_t {
+    pub implementation_identifier: *const ::std::os::raw::c_char,
     pub instance_id: u64,
+    pub actual_domain_id: usize,
+    pub options: rmw_init_options_t,
     pub impl_: *mut rmw_context_impl_t,
 }
 
@@ -148,6 +153,7 @@ pub struct rmw_guard_condition_t {
 pub struct rmw_event_t {
     pub implementation_identifier: *const ::std::os::raw::c_char,
     pub data: *mut ::std::os::raw::c_void,
+    pub event_type: rmw_event_type_t,
 }
 
 // Opaque impl types
@@ -308,6 +314,8 @@ pub struct rcl_serialized_message_t {
     pub buffer_capacity: usize,
     pub allocator: rcl_allocator_t,
 }
+
+
 
 // String array
 #[repr(C)]
@@ -533,14 +541,15 @@ pub struct rcl_timer_impl_t {
 
 // Init options
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct rmw_init_options_t {
     pub instance_id: u64,
     pub implementation_identifier: *const ::std::os::raw::c_char,
     pub domain_id: usize,
     pub security_options: *mut c_void,
-    pub localhost_only: u8,
+    pub discovery_options: *mut c_void,
     pub allocator: rcl_allocator_t,
+    pub enclave: *const ::std::os::raw::c_char,
     pub impl_: *mut c_void,
 }
 
@@ -636,14 +645,10 @@ pub struct rcldynamic_message_t {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub enum rmw_feature_t {
-    RMW_FEATURE_MESSAGE_INFO = 0,
-    RMW_FEATURE_PUBLISHER_LOAN = 1,
-    RMW_FEATURE_SUBSCRIPTION_LOAN = 2,
-    RMW_FEATURE_SERVICE_LOAN = 3,
-    RMW_FEATURE_CLIENT_LOAN = 4,
-    RMW_FEATURE_EVENT_MESSAGE = 5,
-    RMW_FEATURE_EVENT_SERVICE = 6,
-    RMW_FEATURE_EVENT_CLIENT = 7,
+    RMW_FEATURE_MESSAGE_INFO_PUBLICATION_SEQUENCE_NUMBER = 0,
+    RMW_FEATURE_MESSAGE_INFO_RECEPTION_SEQUENCE_NUMBER = 1,
+    RMW_MIDDLEWARE_SUPPORTS_TYPE_DISCOVERY = 2,
+    RMW_MIDDLEWARE_CAN_TAKE_DYNAMIC_MESSAGE = 3,
 }
 
 #[repr(C)]

@@ -17,7 +17,7 @@ pub struct PublisherImpl {
 
 impl PublisherImpl {
     pub fn publish(&self, msg: *const ::std::os::raw::c_void) -> Result<()> {
-        let ros_msg = rcl_z::msg::RosMessage::new(msg as *const rcl_z::c_void, self.ts.clone());
+        let ros_msg = rcl_z::msg::RosMessage::new(msg as *const rcl_z::c_void, self.ts);
         self.inner.publish(&ros_msg)
     }
 
@@ -33,6 +33,8 @@ pub struct SubscriptionImpl {
     pub topic: CString,
     pub options: rmw_subscription_options_t,
     pub qos: rmw_qos_profile_t,
+    pub callback: std::sync::Mutex<rmw_subscription_new_message_callback_t>,
+    pub callback_user_data: std::sync::Mutex<*const crate::c_void>,
 }
 
 impl SubscriptionImpl {
@@ -157,13 +159,13 @@ rmw_impl_has_data_ptr!(rmw_subscription_t, rmw_subscription_impl_t, Subscription
 pub extern "C" fn rmw_publish_serialized_message(
     publisher: *const rmw_publisher_t,
     serialized_message: *const rcl_serialized_message_t,
-    allocation: *mut rmw_publisher_allocation_t,
+    _allocation: *mut rmw_publisher_allocation_t,
 ) -> rmw_ret_t {
     if publisher.is_null() || serialized_message.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let publisher_impl = match unsafe { publisher.borrow_data() } {
+    let publisher_impl = match publisher.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -183,11 +185,11 @@ pub extern "C" fn rmw_publish_serialized_message(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_publish_loaned_message(
-    publisher: *const rmw_publisher_t,
-    ros_message: *mut ::std::os::raw::c_void,
-    allocation: *mut rmw_publisher_allocation_t,
+    _publisher: *const rmw_publisher_t,
+    _ros_message: *mut ::std::os::raw::c_void,
+    _allocation: *mut rmw_publisher_allocation_t,
 ) -> rmw_ret_t {
-    todo!()
+    RMW_RET_UNSUPPORTED as _
 }
 
 #[unsafe(no_mangle)]
@@ -216,7 +218,7 @@ pub extern "C" fn rmw_publisher_get_actual_qos(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let publisher_impl = match unsafe { publisher.borrow_data() } {
+    let publisher_impl = match publisher.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -229,24 +231,32 @@ pub extern "C" fn rmw_publisher_get_actual_qos(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_publisher_assert_liveliness(publisher: *const rmw_publisher_t) -> rmw_ret_t {
-    todo!()
+    if publisher.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+    // Assume liveliness is valid
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_publisher_wait_for_all_acked(
     publisher: *const rmw_publisher_t,
-    wait_timeout: rmw_time_t,
+    _wait_timeout: rmw_time_t,
 ) -> rmw_ret_t {
-    todo!()
+    if publisher.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+    // Not tracking published data, return OK
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_publisher_get_network_flow_endpoints(
-    publisher: *const rmw_publisher_t,
-    allocator: *const rcl_allocator_t,
-    endpoints: *mut rmw_network_flow_endpoint_array_t,
+    _publisher: *const rmw_publisher_t,
+    _allocator: *const rcl_allocator_t,
+    _endpoints: *mut rmw_network_flow_endpoint_array_t,
 ) -> rmw_ret_t {
-    todo!()
+    RMW_RET_UNSUPPORTED as _
 }
 
 // RMW Subscription Functions
@@ -256,13 +266,13 @@ pub extern "C" fn rmw_take_with_info(
     ros_message: *mut ::std::os::raw::c_void,
     taken: *mut bool,
     message_info: *mut rmw_message_info_t,
-    allocation: *mut rmw_subscription_allocation_t,
+    _allocation: *mut rmw_subscription_allocation_t,
 ) -> rmw_ret_t {
     if subscription.is_null() || ros_message.is_null() || taken.is_null() || message_info.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let subscription_impl = match unsafe { subscription.borrow_data() } {
+    let subscription_impl = match subscription.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -280,13 +290,13 @@ pub extern "C" fn rmw_take_sequence(
     message_sequence: *mut rmw_message_sequence_t,
     message_info_sequence: *mut rmw_message_info_sequence_t,
     taken: *mut usize,
-    allocation: *mut rmw_subscription_allocation_t,
+    _allocation: *mut rmw_subscription_allocation_t,
 ) -> rmw_ret_t {
     if subscription.is_null() || message_sequence.is_null() || message_info_sequence.is_null() || taken.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let subscription_impl = match unsafe { subscription.borrow_data() } {
+    let subscription_impl = match subscription.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -329,13 +339,13 @@ pub extern "C" fn rmw_take_serialized_message(
     subscription: *const rmw_subscription_t,
     serialized_message: *mut rcl_serialized_message_t,
     taken: *mut bool,
-    allocation: *mut rmw_subscription_allocation_t,
+    _allocation: *mut rmw_subscription_allocation_t,
 ) -> rmw_ret_t {
     if subscription.is_null() || serialized_message.is_null() || taken.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let subscription_impl = match unsafe { subscription.borrow_data() } {
+    let subscription_impl = match subscription.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -352,13 +362,13 @@ pub extern "C" fn rmw_take_serialized_message_with_info(
     serialized_message: *mut rcl_serialized_message_t,
     taken: *mut bool,
     message_info: *mut rmw_message_info_t,
-    allocation: *mut rmw_subscription_allocation_t,
+    _allocation: *mut rmw_subscription_allocation_t,
 ) -> rmw_ret_t {
     if subscription.is_null() || serialized_message.is_null() || taken.is_null() || message_info.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let subscription_impl = match unsafe { subscription.borrow_data() } {
+    let subscription_impl = match subscription.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -371,21 +381,21 @@ pub extern "C" fn rmw_take_serialized_message_with_info(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_take_loaned_message(
-    subscription: *const rmw_subscription_t,
-    loaned_message: *mut *mut ::std::os::raw::c_void,
-    taken: *mut bool,
-    allocation: *mut rmw_subscription_allocation_t,
+    _subscription: *const rmw_subscription_t,
+    _loaned_message: *mut *mut ::std::os::raw::c_void,
+    _taken: *mut bool,
+    _allocation: *mut rmw_subscription_allocation_t,
 ) -> rmw_ret_t {
     todo!()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_take_loaned_message_with_info(
-    subscription: *const rmw_subscription_t,
-    loaned_message: *mut *mut ::std::os::raw::c_void,
-    taken: *mut bool,
-    message_info: *mut rmw_message_info_t,
-    allocation: *mut rmw_subscription_allocation_t,
+    _subscription: *const rmw_subscription_t,
+    _loaned_message: *mut *mut ::std::os::raw::c_void,
+    _taken: *mut bool,
+    _message_info: *mut rmw_message_info_t,
+    _allocation: *mut rmw_subscription_allocation_t,
 ) -> rmw_ret_t {
     todo!()
 }
@@ -416,7 +426,7 @@ pub extern "C" fn rmw_subscription_get_actual_qos(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let subscription_impl = match unsafe { subscription.borrow_data() } {
+    let subscription_impl = match subscription.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -429,17 +439,17 @@ pub extern "C" fn rmw_subscription_get_actual_qos(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_subscription_set_content_filter(
-    subscription: *const rmw_subscription_t,
-    content_filter: *const rmw_subscription_content_filter_options_t,
+    _subscription: *const rmw_subscription_t,
+    _content_filter: *const rmw_subscription_content_filter_options_t,
 ) -> rmw_ret_t {
     todo!()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_subscription_get_content_filter(
-    subscription: *const rmw_subscription_t,
-    allocator: *const rcl_allocator_t,
-    content_filter: *mut rmw_subscription_content_filter_options_t,
+    _subscription: *const rmw_subscription_t,
+    _allocator: *const rcl_allocator_t,
+    _content_filter: *mut rmw_subscription_content_filter_options_t,
 ) -> rmw_ret_t {
     todo!()
 }

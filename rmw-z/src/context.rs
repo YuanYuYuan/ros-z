@@ -7,6 +7,7 @@ use zenoh::{Session, Wait};
 use crate::rmw_impl_has_impl_ptr;
 use crate::node::NodeImpl;
 use crate::traits::*;
+use rcl_z::utils::Notifier;
 
 /// Context implementation for RMW
 pub struct ContextImpl {
@@ -18,6 +19,7 @@ pub struct ContextImpl {
     pub next_entity_id: Arc<Mutex<usize>>,
     pub is_shutdown: Arc<Mutex<bool>>,
     pub nodes: Arc<Mutex<HashMap<*const rmw_node_t, Arc<NodeImpl>>>>,
+    pub notifier: Arc<Notifier>,
 }
 
 impl ContextImpl {
@@ -37,7 +39,9 @@ impl ContextImpl {
             graph: Arc::new(graph),
             next_entity_id: Arc::new(Mutex::new(1)),
             is_shutdown: Arc::new(Mutex::new(false)),
+            #[allow(clippy::arc_with_non_send_sync)]
             nodes: Arc::new(Mutex::new(HashMap::new())),
+            notifier: Arc::new(Notifier::default()),
         })
     }
 
@@ -63,6 +67,10 @@ impl ContextImpl {
 
         Ok(node_impl)
     }
+
+    pub fn share_notifier(&self) -> Arc<Notifier> {
+        self.notifier.clone()
+    }
 }
 
 rmw_impl_has_impl_ptr!(rmw_context_t, rmw_context_impl_t, ContextImpl);
@@ -71,8 +79,8 @@ rmw_impl_has_impl_ptr!(rmw_context_t, rmw_context_impl_t, ContextImpl);
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_init_options_init(
     init_options: *mut rmw_init_options_t,
-    domain_id: usize,
-    allocator: rcl_allocator_t,
+    _domain_id: usize,
+    _allocator: rcl_allocator_t,
 ) -> rmw_ret_t {
     if init_options.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
@@ -128,7 +136,7 @@ pub extern "C" fn rmw_init(
     };
 
     // Assign implementation
-    match (context as *mut rmw_context_t).assign_impl(context_impl) {
+    match context.assign_impl(context_impl) {
         Ok(_) => {
             unsafe { (*context).instance_id = 1 }; // TODO: proper instance ID
             RMW_RET_OK as _
@@ -158,7 +166,7 @@ pub extern "C" fn rmw_context_fini(context: *mut rmw_context_t) -> rmw_ret_t {
     }
 
     // Own and drop the implementation
-    match (context as *mut rmw_context_t).own_impl() {
+    match context.own_impl() {
         Ok(_) => RMW_RET_OK as _,
         Err(_) => RMW_RET_ERROR as _,
     }
