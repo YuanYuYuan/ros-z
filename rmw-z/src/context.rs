@@ -7,7 +7,7 @@ use zenoh::{Session, Wait};
 use crate::rmw_impl_has_impl_ptr;
 use crate::node::NodeImpl;
 use crate::traits::*;
-use rcl_z::utils::Notifier;
+use crate::utils::Notifier;
 
 /// Context implementation for RMW
 pub struct ContextImpl {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use crate::ros::*;
 use crate::rmw_impl_has_data_ptr;
 use crate::traits::*;
-use rcl_z::utils::Notifier;
+use crate::utils::Notifier;
 
 /// Guard condition implementation for RMW
 #[derive(Debug, Default)]

@@ -19,7 +19,6 @@ cdr = { workspace = true }
 serde = { workspace = true, features = ["serde_derive"] }
 ros-z = { workspace = true, features = ["rmw-z"] }
 strum = { workspace = true, features = ["derive"] }
-rcl-z = { workspace = true }
 
 [lib]
 name = "rmw_z"

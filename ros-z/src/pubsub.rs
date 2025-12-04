@@ -4,7 +4,8 @@ use std::time::Duration;
 use std::{marker::PhantomData, sync::Arc};
 
 use zenoh::liveliness::LivelinessToken;
-use zenoh::{Result, Session, Wait, sample::Sample};
+use zenoh::{Result, Session, Wait, sample::{Locality, Sample}};
+use zenoh_ext::{AdvancedPublisher, AdvancedSubscriberBuilderExt, CacheConfig, HistoryConfig, RecoveryConfig, AdvancedPublisherBuilderExt};
 
 use crate::Builder;
 use crate::attachment::{Attachment, GidArray};
@@ -23,7 +24,7 @@ pub struct ZPub<T: ZMessage, S: ZSerializer> {
     sn: AtomicUsize,
     // TODO: replace this with zenoh's global entity id
     gid: GidArray,
-    inner: zenoh::pubsub::Publisher<'static>,
+    inner: AdvancedPublisher<'static>,
     _lv_token: LivelinessToken,
     with_attachment: bool,
     events_mgr: Arc<Mutex<EventsManager>>,
@@ -96,17 +97,23 @@ where
             }
         }
 
-        // Map durability: TransientLocal uses express=true for caching
-        match self.entity.qos.durability {
+        // Map durability: TransientLocal uses cache for persistence
+        let inner = match self.entity.qos.durability {
             QosDurability::TransientLocal => {
-                pub_builder = pub_builder.express(true);
+                let depth = match self.entity.qos.history {
+                    QosHistory::KeepLast(d) => d,
+                    QosHistory::KeepAll => usize::MAX,
+                };
+                pub_builder
+                    .advanced()
+                    .cache(CacheConfig::default().max_samples(depth))
+                    .publisher_detection()
+                    .wait()?
             }
             QosDurability::Volatile => {
-                pub_builder = pub_builder.express(false);
+                pub_builder.express(false).advanced().wait()?
             }
-        }
-
-        let inner = pub_builder.wait()?;
+        };
         let lv_token = self
             .session
             .liveliness()
@@ -326,13 +333,39 @@ where
         };
 
         let (tx, rx) = flume::bounded(queue_size);
-        let inner = self
-            .session
-            .declare_subscriber(self.entity.topic_key_expr()?)
-            .callback(move |sample| {
-                let _ = tx.send(sample);
-            })
-            .wait()?;
+        let inner = match self.entity.qos.durability {
+            QosDurability::TransientLocal => {
+                let depth = match self.entity.qos.history {
+                    QosHistory::KeepLast(d) => d,
+                    QosHistory::KeepAll => usize::MAX,
+                };
+                let sub_builder = self.session
+                    .declare_subscriber(self.entity.topic_key_expr()?)
+                    .advanced()
+                    .subscriber_detection()
+                    .history(HistoryConfig::default().detect_late_publishers().max_samples(depth));
+                let sub_builder = if self.entity.qos.reliability == QosReliability::Reliable {
+                    sub_builder.recovery(RecoveryConfig::default())
+                } else {
+                    sub_builder
+                };
+                sub_builder
+                    .allowed_origin(Locality::Any)
+                    .callback(move |sample| {
+                        let _ = tx.send(sample);
+                    })
+                    .wait()?
+            }
+            QosDurability::Volatile => {
+                self.session
+                    .declare_subscriber(self.entity.topic_key_expr()?)
+                    .advanced()
+                    .callback(move |sample| {
+                        let _ = tx.send(sample);
+                    })
+                    .wait()?
+            }
+        };
         let gid = self.entity.gid();
         let lv_token = self
             .session
@@ -352,8 +385,8 @@ where
 
 pub struct ZSub<T: ZMessage, Q, S: ZDeserializer> {
     pub entity: EndpointEntity,
-    pub queue: Option<flume::Receiver<Q>>,
-    _inner: zenoh::pubsub::Subscriber<()>,
+    pub queue: flume::Receiver<Q>,
+    _inner: zenoh_ext::AdvancedSubscriber<()>,
     _lv_token: LivelinessToken,
     events_mgr: Arc<Mutex<EventsManager>>,
     _phantom_data: PhantomData<(T, S)>,

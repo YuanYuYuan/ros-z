@@ -4,12 +4,11 @@ use crate::traits::{Waitable, BorrowData};
 use crate::ros::*;
 use zenoh::{Result, sample::Sample};
 use crate::rmw_impl_has_data_ptr;
-use rcl_z::ros::{rmw_message_sequence_t, rmw_message_info_sequence_t};
 
 /// Publisher implementation for RMW
 pub struct PublisherImpl {
-    pub inner: ros_z::pubsub::ZPub<rcl_z::msg::RosMessage, rcl_z::msg::RosSerdes>,
-    pub ts: rcl_z::type_support::MessageTypeSupport,
+    pub inner: ros_z::pubsub::ZPub<crate::msg::RosMessage, crate::msg::RosSerdes>,
+    pub ts: crate::type_support::MessageTypeSupport,
     pub topic: CString,
     pub options: rmw_publisher_options_t,
     pub qos: rmw_qos_profile_t,
@@ -17,7 +16,7 @@ pub struct PublisherImpl {
 
 impl PublisherImpl {
     pub fn publish(&self, msg: *const ::std::os::raw::c_void) -> Result<()> {
-        let ros_msg = rcl_z::msg::RosMessage::new(msg as *const rcl_z::c_void, self.ts);
+        let ros_msg = crate::msg::RosMessage::new(msg as *const crate::c_void, self.ts);
         self.inner.publish(&ros_msg)
     }
 
@@ -28,8 +27,8 @@ impl PublisherImpl {
 
 /// Subscription implementation for RMW
 pub struct SubscriptionImpl {
-    pub inner: ros_z::pubsub::ZSub<rcl_z::msg::RosMessage, Sample, rcl_z::msg::RosSerdes>,
-    pub ts: rcl_z::type_support::MessageTypeSupport,
+    pub inner: ros_z::pubsub::ZSub<crate::msg::RosMessage, Sample, crate::msg::RosSerdes>,
+    pub ts: crate::type_support::MessageTypeSupport,
     pub topic: CString,
     pub options: rmw_subscription_options_t,
     pub qos: rmw_qos_profile_t,
@@ -68,16 +67,15 @@ impl SubscriptionImpl {
             if !message_info.is_null() {
                 unsafe {
                     // Initialize message_info with default values
-                    (*message_info).source_timestamp = crate::ros::rmw_time_t { sec: 0, nsec: 0 }; // TODO: Extract from Zenoh sample timestamp
-                    (*message_info).received_timestamp = crate::ros::rmw_time_t { sec: 0, nsec: 0 }; // TODO: Get current time
+                    (*message_info).source_timestamp = 0; // TODO: Extract from Zenoh sample timestamp
+                    (*message_info).received_timestamp = 0; // TODO: Get current time
                     (*message_info).publication_sequence_number = 0;
                     (*message_info).reception_sequence_number = 0;
 
                     // Set publisher GID to zeros for now
                     // TODO: Extract proper GID from Zenoh sample
-                    for i in 0..24 {
-                        (*message_info).publisher_gid[i] = 0;
-                    }
+                    (*message_info).publisher_gid.data = [0u8; 16];
+                    (*message_info).publisher_gid.implementation_identifier = std::ptr::null();
                     (*message_info).from_intra_process = false;
                 }
             }
@@ -128,13 +126,12 @@ impl SubscriptionImpl {
             // Fill in message_info if provided
             if !message_info.is_null() {
                 unsafe {
-                    (*message_info).source_timestamp = crate::ros::rmw_time_t { sec: 0, nsec: 0 };
-                    (*message_info).received_timestamp = crate::ros::rmw_time_t { sec: 0, nsec: 0 };
+                    (*message_info).source_timestamp = 0;
+                    (*message_info).received_timestamp = 0;
                     (*message_info).publication_sequence_number = 0;
                     (*message_info).reception_sequence_number = 0;
-                    for i in 0..24 {
-                        (*message_info).publisher_gid[i] = 0;
-                    }
+                    (*message_info).publisher_gid.data = [0u8; 16];
+                    (*message_info).publisher_gid.implementation_identifier = std::ptr::null();
                     (*message_info).from_intra_process = false;
                 }
             }

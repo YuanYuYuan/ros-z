@@ -9,11 +9,11 @@ use zenoh::Result;
 
 /// Client implementation for RMW
 pub struct ClientImpl {
-    pub inner: ros_z::service::ZClient<rcl_z::msg::RosService>,
+    pub inner: ros_z::service::ZClient<crate::msg::RosService>,
     pub service_name: String,
     pub options: rmw_client_options_t,
-    pub request_ts: rcl_z::type_support::ServiceTypeSupport,
-    pub response_ts: rcl_z::type_support::ServiceTypeSupport,
+    pub request_ts: crate::type_support::ServiceTypeSupport,
+    pub response_ts: crate::type_support::ServiceTypeSupport,
     pub callback: Mutex<rmw_client_new_response_callback_t>,
     pub callback_user_data: Mutex<*const c_void>,
 }
@@ -21,11 +21,12 @@ pub struct ClientImpl {
 impl ClientImpl {
     pub fn send_request(&self, request: *const c_void, sequence_id: *mut i64) -> Result<()> {
         // Create RosMessage from the raw pointer using request MessageTypeSupport
-        let req = rcl_z::msg::RosMessage::new(request as *const rcl_z::c_void, self.request_ts.request);
+        let req = crate::msg::RosMessage::new(request, self.request_ts.request);
 
-        // Use rcl_send_request to send and get sequence number
-        let sn = self.inner.rcl_send_request(&req, || {})?;
-        unsafe { *sequence_id = sn; }
+        // Send the request
+        self.inner.send_request(&req)?;
+        // TODO: Get actual sequence number from the send_request result
+        unsafe { *sequence_id = 0; }
         Ok(())
     }
 
@@ -53,8 +54,8 @@ impl ClientImpl {
                     for i in 0..16 {
                         (*request_header).request_id.writer_guid[i] = 0; // TODO: extract GID
                     }
-                    (*request_header).source_timestamp = crate::ros::rmw_time_t { sec: 0, nsec: 0 };
-                    (*request_header).received_timestamp = crate::ros::rmw_time_t { sec: 0, nsec: 0 };
+                    (*request_header).source_timestamp = 0;
+                    (*request_header).received_timestamp = 0;
                 }
             }
 
@@ -66,10 +67,10 @@ impl ClientImpl {
 
 /// Service implementation for RMW
 pub struct ServiceImpl {
-    pub inner: ros_z::service::ZServer<rcl_z::msg::RosService>,
+    pub inner: ros_z::service::ZServer<crate::msg::RosService>,
     pub service_name: CString,
-    pub request_ts: rcl_z::type_support::ServiceTypeSupport,
-    pub response_ts: rcl_z::type_support::ServiceTypeSupport,
+    pub request_ts: crate::type_support::ServiceTypeSupport,
+    pub response_ts: crate::type_support::ServiceTypeSupport,
     pub qos: rmw_qos_profile_t,
     pub callback: Mutex<rmw_service_new_request_callback_t>,
     pub callback_user_data: Mutex<*const c_void>,
@@ -116,8 +117,8 @@ impl ServiceImpl {
                             (*request_header).request_id.writer_guid[i] = byte;
                         }
                     }
-                    (*request_header).source_timestamp = crate::ros::rmw_time_t { sec: 0, nsec: 0 };
-                    (*request_header).received_timestamp = crate::ros::rmw_time_t { sec: 0, nsec: 0 };
+                    (*request_header).source_timestamp = 0;
+                    (*request_header).received_timestamp = 0;
                 }
             }
 
@@ -142,7 +143,7 @@ impl ServiceImpl {
         };
 
         // Create RosMessage Response from the raw pointer using response MessageTypeSupport
-        let resp = rcl_z::msg::RosMessage::new(response as *const rcl_z::c_void, self.response_ts.response);
+        let resp = crate::msg::RosMessage::new(response, self.response_ts.response);
 
         // Send response
         self.inner.send_response(&resp, &key)?;

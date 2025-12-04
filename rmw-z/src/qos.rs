@@ -4,23 +4,26 @@ use crate::ros::*;
 pub fn rmw_qos_to_ros_z_qos(qos: &rmw_qos_profile_t) -> ros_z::qos::QosProfile {
     use ros_z::qos::*;
 
+    #[allow(non_upper_case_globals)]
     let history = match qos.history {
-        RMW_QOS_POLICY_HISTORY_KEEP_LAST => {
+        rmw_qos_history_policy_e_RMW_QOS_POLICY_HISTORY_KEEP_LAST => {
             QosHistory::KeepLast(qos.depth)
         }
-        RMW_QOS_POLICY_HISTORY_KEEP_ALL => QosHistory::KeepAll,
+        rmw_qos_history_policy_e_RMW_QOS_POLICY_HISTORY_KEEP_ALL => QosHistory::KeepAll,
         _ => QosHistory::KeepLast(10), // Default
     };
 
+    #[allow(non_upper_case_globals)]
     let reliability = match qos.reliability {
-        RMW_QOS_POLICY_RELIABILITY_RELIABLE => QosReliability::Reliable,
-        RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT => QosReliability::BestEffort,
+        rmw_qos_reliability_policy_e_RMW_QOS_POLICY_RELIABILITY_RELIABLE => QosReliability::Reliable,
+        rmw_qos_reliability_policy_e_RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT => QosReliability::BestEffort,
         _ => QosReliability::Reliable, // Default
     };
 
+    #[allow(non_upper_case_globals)]
     let durability = match qos.durability {
-        RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL => QosDurability::TransientLocal,
-        RMW_QOS_POLICY_DURABILITY_VOLATILE => QosDurability::Volatile,
+        rmw_qos_durability_policy_e_RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL => QosDurability::TransientLocal,
+        rmw_qos_durability_policy_e_RMW_QOS_POLICY_DURABILITY_VOLATILE => QosDurability::Volatile,
         _ => QosDurability::Volatile, // Default
     };
 
@@ -55,8 +58,8 @@ pub extern "C" fn rmw_qos_profile_check_compatible(
         unsafe { *reason = 0; }
     }
     // Check for specific incompatibility
-    if publisher_profile.durability == RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
-        && subscription_profile.durability == RMW_QOS_POLICY_DURABILITY_VOLATILE {
+    if publisher_profile.durability == rmw_qos_durability_policy_e_RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
+        && subscription_profile.durability == rmw_qos_durability_policy_e_RMW_QOS_POLICY_DURABILITY_VOLATILE {
         unsafe { *compatibility = rmw_qos_compatibility_type_t::RMW_QOS_COMPATIBILITY_WARNING; }
         // For simplicity, don't append to reason
         RMW_RET_OK as _

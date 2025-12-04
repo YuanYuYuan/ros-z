@@ -131,6 +131,27 @@
             };
           };
 
+        # Colcon configuration
+        colconDefaults = pkgs.writeText "colcon-defaults.json" (
+          builtins.toJSON {
+            build = {
+              parallel-workers = 4;
+              symlink-install = true;
+              cmake-args = [
+                "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+                "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+              ];
+            };
+            test = {
+              parallel-workers = 1;
+              event-handlers = [
+                "console_cohesion+"
+                "console_direct+"
+              ];
+            };
+          }
+        );
+
         # Common build tools
         commonBuildInputs = with pkgs; [
           rustToolchain
@@ -142,6 +163,7 @@
           nushell
           protobuf
           markdownlint-cli
+          colcon
         ];
 
         # Development tools
@@ -170,6 +192,9 @@
           RUST_BACKTRACE = "1";
           RMW_IMPLEMENTATION = "rmw_zenoh_cpp";
           RUSTC_WRAPPER = "${pkgs.sccache}/bin/sccache";
+          COLCON_DEFAULTS_FILE = "${colconDefaults}";
+          CARGO_BUILD_JOBS = "4";
+          MAKEFLAGS = "-j4";
         };
 
         # Export environment variables as shell commands
