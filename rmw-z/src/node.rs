@@ -16,6 +16,7 @@ pub struct NodeImpl {
     pub name: CString,
     pub namespace: CString,
     pub fq_name: CString,
+    pub graph_guard_condition: *mut rmw_guard_condition_t,
 }
 
 impl NodeImpl {
@@ -49,6 +50,7 @@ impl NodeImpl {
             name: name_cstr,
             namespace: namespace_cstr,
             fq_name: fq_name_cstr,
+            graph_guard_condition: std::ptr::null_mut(),
         })
     }
 }
@@ -78,16 +80,27 @@ pub extern "C" fn rmw_create_node(
         .to_str()
         .unwrap_or("");
 
-    let node_impl = match context_impl.new_node(name, namespace_, context, std::ptr::null()) {
+    let mut node_impl = match context_impl.new_node(name, namespace_, context, std::ptr::null()) {
         Ok(impl_) => impl_,
         Err(_) => return std::ptr::null_mut(),
     };
 
+    // Create a graph guard condition for this node
+    let graph_guard_condition = crate::guard_condition::rmw_create_guard_condition(context);
+    if graph_guard_condition.is_null() {
+        return std::ptr::null_mut();
+    }
+    node_impl.graph_guard_condition = graph_guard_condition;
+
+    // Get pointers to the owned CStrings in node_impl
+    let name_ptr = node_impl.name.as_ptr();
+    let namespace_ptr = node_impl.namespace.as_ptr();
+
     let node = Box::new(rmw_node_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         data: std::ptr::null_mut(),
-        name: name as *const _,
-        namespace_: namespace_ as *const _,
+        name: name_ptr as *const _,
+        namespace_: namespace_ptr as *const _,
         context,
     });
 
@@ -103,6 +116,13 @@ pub extern "C" fn rmw_create_node(
 pub extern "C" fn rmw_destroy_node(node: *mut rmw_node_t) -> rmw_ret_t {
     if node.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    // Destroy the graph guard condition first
+    if let Ok(node_impl) = node.borrow_data() {
+        if !node_impl.graph_guard_condition.is_null() {
+            crate::guard_condition::rmw_destroy_guard_condition(node_impl.graph_guard_condition);
+        }
     }
 
     // Drop the implementation data

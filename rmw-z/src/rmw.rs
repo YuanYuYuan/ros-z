@@ -19,21 +19,18 @@ use ros_z::{event::{RmEventHandle, ZenohEventType}, Builder};
 
 use crate::{pubsub::PublisherImpl, ros::*, traits::*};
 
-// RMW implementation identifier
-pub const RMW_ZENOH_IDENTIFIER: &str = "rmw_zenoh_cpp";
-
-// Serialization format
-pub const RMW_ZENOH_SERIALIZATION_FORMAT: &str = "cdr";
-
 // Implement the actual RMW functions
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_get_implementation_identifier() -> *const std::os::raw::c_char {
-    RMW_ZENOH_IDENTIFIER.as_ptr() as *const std::os::raw::c_char
+    eprintln!("[rmw_z] Successfully loaded! Identifier: {}",
+              std::str::from_utf8(&crate::RMW_ZENOH_IDENTIFIER[..crate::RMW_ZENOH_IDENTIFIER.len()-1])
+              .unwrap_or("rmw_z"));
+    crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const std::os::raw::c_char
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_get_serialization_format() -> *const std::os::raw::c_char {
-    RMW_ZENOH_SERIALIZATION_FORMAT.as_ptr() as *const std::os::raw::c_char
+    crate::RMW_ZENOH_SERIALIZATION_FORMAT.as_ptr() as *const std::os::raw::c_char
 }
 
 // Publishers
@@ -78,7 +75,8 @@ pub extern "C" fn rmw_create_publisher(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let topic_cstr = match std::ffi::CString::new(topic_str) {
+    let qualified_topic = zpub.entity.topic.clone();
+    let topic_cstr = match std::ffi::CString::new(qualified_topic) {
         Ok(cstr) => cstr,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -91,20 +89,20 @@ pub extern "C" fn rmw_create_publisher(
         qos: unsafe { *qos_profile },
     };
 
+    // Box the publisher_impl first so the topic CString lives on the heap
+    let publisher_impl_boxed = Box::new(publisher_impl);
+    let topic_ptr = publisher_impl_boxed.topic.as_ptr();
+    let publisher_impl_ptr = Box::into_raw(publisher_impl_boxed);
+
     let publisher = Box::new(rmw_publisher_t {
-        implementation_identifier: RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
-        data: std::ptr::null_mut(),
-        topic_name: topic_name as *const _,
+        implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
+        data: publisher_impl_ptr as *mut _,
+        topic_name: topic_ptr as *const _,
         options: unsafe { *publisher_options },
         can_loan_messages: false,
     });
 
-    let publisher_ptr = Box::into_raw(publisher);
-    unsafe {
-        (*publisher_ptr).data = Box::into_raw(Box::new(publisher_impl)) as *mut _;
-    }
-
-    publisher_ptr
+    Box::into_raw(publisher)
 }
 
 #[unsafe(no_mangle)]
@@ -186,7 +184,8 @@ pub extern "C" fn rmw_create_subscription(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let topic_cstr = match std::ffi::CString::new(topic_str) {
+    let qualified_topic = zsub.entity.topic.clone();
+    let topic_cstr = match std::ffi::CString::new(qualified_topic) {
         Ok(cstr) => cstr,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -194,7 +193,7 @@ pub extern "C" fn rmw_create_subscription(
     let subscription_impl = crate::pubsub::SubscriptionImpl {
         inner: zsub,
         ts,
-        topic: topic_cstr,
+        topic: topic_cstr.clone(),
         options: unsafe { *subscription_options },
         qos: unsafe { *qos_policies },
         callback: std::sync::Mutex::new(None),
@@ -202,9 +201,9 @@ pub extern "C" fn rmw_create_subscription(
     };
 
     let subscription = Box::new(rmw_subscription_t {
-        implementation_identifier: RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
+        implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         data: std::ptr::null_mut(),
-        topic_name: topic_name as *const _,
+        topic_name: topic_cstr.as_ptr() as *const _,
         options: unsafe { *subscription_options },
         can_loan_messages: false,
         is_cft_enabled: false,
@@ -295,9 +294,21 @@ pub extern "C" fn rmw_create_client(
 
     // Create client using ros-z
     let _qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { &*qos_policies });
+    let qualified_service = match ros_z::topic_name::qualify_service_name(
+        service_str,
+        &node_impl.inner.entity.namespace,
+        &node_impl.inner.entity.name,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to qualify service name: {}", e);
+            return std::ptr::null_mut();
+        }
+    };
+
     let zclient = match node_impl
         .inner
-        .create_client::<crate::msg::RosService>(service_str)
+        .create_client::<crate::msg::RosService>(&qualified_service)
         .build()
     {
         Ok(client) => client,
@@ -305,6 +316,11 @@ pub extern "C" fn rmw_create_client(
             tracing::error!("Failed to create client: {}", e);
             return std::ptr::null_mut();
         }
+    };
+
+    let service_cstr = match std::ffi::CString::new(qualified_service.clone()) {
+        Ok(cstr) => cstr,
+        Err(_) => return std::ptr::null_mut(),
     };
 
     let service_type_support =
@@ -318,7 +334,7 @@ pub extern "C" fn rmw_create_client(
 
     let client_impl = crate::service::ClientImpl {
         inner: zclient,
-        service_name: service_str.to_string(),
+        service_name: qualified_service,
         options: rmw_client_options_t {
             qos: unsafe { *qos_policies },
         },
@@ -329,9 +345,9 @@ pub extern "C" fn rmw_create_client(
     };
 
     let client = Box::new(rmw_client_t {
-        implementation_identifier: RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
+        implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         data: std::ptr::null_mut(),
-        service_name: service_name as *const _,
+        service_name: service_cstr.as_ptr() as *const _,
     });
 
     let client_ptr = Box::into_raw(client);
@@ -375,9 +391,21 @@ pub extern "C" fn rmw_create_service(
 
     // Create service using ros-z
     let _qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { &*qos_profile });
+    let qualified_service = match ros_z::topic_name::qualify_service_name(
+        service_str,
+        &node_impl.inner.entity.namespace,
+        &node_impl.inner.entity.name,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to qualify service name: {}", e);
+            return std::ptr::null_mut();
+        }
+    };
+
     let zserver = match node_impl
         .inner
-        .create_service::<crate::msg::RosService>(service_str)
+        .create_service::<crate::msg::RosService>(&qualified_service)
         .build()
     {
         Ok(server) => server,
@@ -387,7 +415,7 @@ pub extern "C" fn rmw_create_service(
         }
     };
 
-    let service_name_cstr = match std::ffi::CString::new(service_str) {
+    let service_name_cstr = match std::ffi::CString::new(qualified_service.clone()) {
         Ok(cstr) => cstr,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -403,7 +431,7 @@ pub extern "C" fn rmw_create_service(
 
     let service_impl = crate::service::ServiceImpl {
         inner: zserver,
-        service_name: service_name_cstr,
+        service_name: service_name_cstr.clone(),
         request_ts: service_type_support,
         response_ts: service_type_support,
         qos: unsafe { *qos_profile },
@@ -412,9 +440,9 @@ pub extern "C" fn rmw_create_service(
     };
 
     let service = Box::new(rmw_service_t {
-        implementation_identifier: RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
+        implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         data: std::ptr::null_mut(),
-        service_name: service_name as *const _,
+        service_name: service_name_cstr.as_ptr() as *const _,
     });
 
     let service_ptr = Box::into_raw(service);
@@ -535,8 +563,12 @@ pub extern "C" fn rmw_node_get_graph_guard_condition(
     if node.is_null() {
         return std::ptr::null();
     }
-    // Since rmw-z does not implement graph guard condition, return null
-    std::ptr::null()
+
+    // Get the graph guard condition from the node implementation
+    match node.borrow_data() {
+        Ok(node_impl) => node_impl.graph_guard_condition,
+        Err(_) => std::ptr::null(),
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -634,11 +666,45 @@ pub extern "C" fn rmw_get_subscriber_names_and_types_by_node(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_serialize(
-    _ros_message: *const c_void,
-    _type_support: *const rosidl_message_type_support_t,
-    _serialized_message: *mut rcl_serialized_message_t,
+    ros_message: *const c_void,
+    type_support: *const rosidl_message_type_support_t,
+    serialized_message: *mut rcl_serialized_message_t,
 ) -> rmw_ret_t {
-    todo!()
+    if ros_message.is_null() || type_support.is_null() || serialized_message.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    let ts = match unsafe { MessageTypeSupport::new(type_support) } {
+        Ok(ts) => ts,
+        Err(_) => return RMW_RET_ERROR as _,
+    };
+
+    let serialized = unsafe { ts.serialize_message(ros_message) };
+
+    // Allocate or resize the buffer in serialized_message
+    unsafe {
+        let msg = &mut *serialized_message;
+        if msg.buffer_capacity < serialized.len() {
+            // Need to reallocate
+            if !msg.buffer.is_null() {
+                // Drop the old buffer
+                let _ = Vec::from_raw_parts(
+                    msg.buffer,
+                    msg.buffer_length,
+                    msg.buffer_capacity,
+                );
+            }
+            // Allocate new buffer
+            let mut new_buffer = vec![0u8; serialized.len()];
+            msg.buffer = new_buffer.as_mut_ptr();
+            msg.buffer_capacity = new_buffer.len();
+            std::mem::forget(new_buffer);
+        }
+        msg.buffer_length = serialized.len();
+        std::ptr::copy_nonoverlapping(serialized.as_ptr(), msg.buffer, serialized.len());
+    }
+
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]
@@ -864,7 +930,7 @@ pub extern "C" fn rmw_get_gid_for_publisher(
     if gid.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
-    if unsafe { (*publisher).implementation_identifier } != RMW_ZENOH_IDENTIFIER.as_ptr() as *const _ {
+    if unsafe { (*publisher).implementation_identifier } != crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _ {
         return RMW_RET_INCORRECT_RMW_IMPLEMENTATION as _;
     }
 
@@ -883,7 +949,7 @@ pub extern "C" fn rmw_get_gid_for_client(
     if gid.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
-    if unsafe { (*client).implementation_identifier } != RMW_ZENOH_IDENTIFIER.as_ptr() as *const _ {
+    if unsafe { (*client).implementation_identifier } != crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _ {
         return RMW_RET_INCORRECT_RMW_IMPLEMENTATION as _;
     }
 
@@ -902,7 +968,7 @@ pub extern "C" fn rmw_compare_gids_equal(
     }
 
     let gid1_ref = unsafe { &*gid1 };
-    if gid1_ref.implementation_identifier != RMW_ZENOH_IDENTIFIER.as_ptr() as *const _ {
+    if gid1_ref.implementation_identifier != crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _ {
         return RMW_RET_INCORRECT_RMW_IMPLEMENTATION as _;
     }
 
@@ -911,7 +977,7 @@ pub extern "C" fn rmw_compare_gids_equal(
     }
 
     let gid2_ref = unsafe { &*gid2 };
-    if gid2_ref.implementation_identifier != RMW_ZENOH_IDENTIFIER.as_ptr() as *const _ {
+    if gid2_ref.implementation_identifier != crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _ {
         return RMW_RET_INCORRECT_RMW_IMPLEMENTATION as _;
     }
 
@@ -999,6 +1065,23 @@ pub extern "C" fn rmw_fini_subscription_allocation(
 }
 
 
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_take_dynamic_message(
+    subscription: *const rmw_subscription_t,
+    dynamic_message: *mut rcldynamic_message_t,
+    taken: *mut bool,
+    allocation: *mut rmw_subscription_allocation_t,
+) -> rmw_ret_t {
+    // Call the _with_info version with a null message_info pointer
+    rmw_take_dynamic_message_with_info(
+        subscription,
+        dynamic_message,
+        taken,
+        std::ptr::null_mut(),
+        allocation,
+    )
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_take_dynamic_message_with_info(

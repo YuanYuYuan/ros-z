@@ -131,11 +131,13 @@ pub fn qualify_topic_name(
     validate_namespace(namespace)?;
     validate_node_name(node_name)?;
 
-    // Normalize namespace: empty or "/" becomes empty string for processing
-    let namespace = if namespace.is_empty() || namespace == "/" {
-        ""
+    // Normalize namespace: ensure it starts with "/" if not empty
+    let namespace = if namespace.is_empty() {
+        "".to_string()
+    } else if namespace.starts_with('/') {
+        namespace.to_string()
     } else {
-        namespace
+        format!("/{}", namespace)
     };
 
     // Handle different topic name types
