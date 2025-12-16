@@ -40,6 +40,7 @@ impl NodeImpl {
             session: session.clone(),
             counter: counter.clone(),
             graph: graph.clone(),
+            remap_rules: Default::default(),
         }.build().map_err(|e| format!("Failed to build node: {}", e))?;
 
         Ok(Self {

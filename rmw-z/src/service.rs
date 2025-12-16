@@ -35,8 +35,9 @@ impl ClientImpl {
 
         eprintln!("🔵 [ClientImpl::send_request] Sending request with sequence number: {}", sn);
 
-        // Send the request (ZClient will also increment its internal counter)
-        self.inner.send_request(&req)?;
+        // Send the request using rcl_send_request (synchronous version)
+        // We don't need a notify callback for RMW
+        let _ = self.inner.rcl_send_request(&req, || {})?;
 
         // Return the sequence number we tracked
         unsafe { *sequence_id = sn; }
@@ -93,9 +94,7 @@ impl ClientImpl {
 
                 unsafe {
                     (*request_header).request_id.sequence_number = sn;
-                    for i in 0..16 {
-                        (*request_header).request_id.writer_guid[i] = gid[i];
-                    }
+                    (*request_header).request_id.writer_guid.copy_from_slice(&gid);
                     (*request_header).source_timestamp = source_timestamp;
                     (*request_header).received_timestamp = received_timestamp;
                 }

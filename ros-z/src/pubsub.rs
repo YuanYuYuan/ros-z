@@ -4,8 +4,8 @@ use std::time::Duration;
 use std::{marker::PhantomData, sync::Arc};
 
 use zenoh::liveliness::LivelinessToken;
-use zenoh::{Result, Session, Wait, sample::{Locality, Sample}};
-use zenoh_ext::{AdvancedPublisher, AdvancedSubscriberBuilderExt, CacheConfig, HistoryConfig, RecoveryConfig, AdvancedPublisherBuilderExt};
+use zenoh::{Result, Session, Wait, sample::Sample};
+use zenoh_ext::{AdvancedPublisher, CacheConfig, AdvancedPublisherBuilderExt};
 
 use crate::Builder;
 use crate::attachment::{Attachment, GidArray};
@@ -333,39 +333,13 @@ where
         };
 
         let (tx, rx) = flume::bounded(queue_size);
-        let inner = match self.entity.qos.durability {
-            QosDurability::TransientLocal => {
-                let depth = match self.entity.qos.history {
-                    QosHistory::KeepLast(d) => d,
-                    QosHistory::KeepAll => usize::MAX,
-                };
-                let sub_builder = self.session
-                    .declare_subscriber(self.entity.topic_key_expr()?)
-                    .advanced()
-                    .subscriber_detection()
-                    .history(HistoryConfig::default().detect_late_publishers().max_samples(depth));
-                let sub_builder = if self.entity.qos.reliability == QosReliability::Reliable {
-                    sub_builder.recovery(RecoveryConfig::default())
-                } else {
-                    sub_builder
-                };
-                sub_builder
-                    .allowed_origin(Locality::Any)
-                    .callback(move |sample| {
-                        let _ = tx.send(sample);
-                    })
-                    .wait()?
-            }
-            QosDurability::Volatile => {
-                self.session
-                    .declare_subscriber(self.entity.topic_key_expr()?)
-                    .advanced()
-                    .callback(move |sample| {
-                        let _ = tx.send(sample);
-                    })
-                    .wait()?
-            }
-        };
+        let inner = self
+            .session
+            .declare_subscriber(self.entity.topic_key_expr()?)
+            .callback(move |sample| {
+                let _ = tx.send(sample);
+            })
+            .wait()?;
         let gid = self.entity.gid();
         let lv_token = self
             .session
@@ -385,8 +359,8 @@ where
 
 pub struct ZSub<T: ZMessage, Q, S: ZDeserializer> {
     pub entity: EndpointEntity,
-    pub queue: flume::Receiver<Q>,
-    _inner: zenoh_ext::AdvancedSubscriber<()>,
+    pub queue: Option<flume::Receiver<Q>>,
+    _inner: zenoh::pubsub::Subscriber<()>,
     _lv_token: LivelinessToken,
     events_mgr: Arc<Mutex<EventsManager>>,
     _phantom_data: PhantomData<(T, S)>,

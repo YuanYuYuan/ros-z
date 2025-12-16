@@ -451,7 +451,7 @@ pub extern "C" fn rmw_create_service(
         callback_user_data: std::sync::Mutex::new(std::ptr::null()),
     };
 
-    let mut service = Box::new(rmw_service_t {
+    let service = Box::new(rmw_service_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         data: std::ptr::null_mut(),
         service_name: std::ptr::null(),

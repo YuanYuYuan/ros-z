@@ -4,7 +4,6 @@ use crate::traits::{Waitable, BorrowData};
 use crate::ros::*;
 use zenoh::{Result, sample::Sample};
 use crate::rmw_impl_has_data_ptr;
-use ros_z::entity::{Entity, EntityKind};
 
 /// Publisher implementation for RMW
 pub struct PublisherImpl {
@@ -42,7 +41,9 @@ pub struct SubscriptionImpl {
 impl SubscriptionImpl {
     pub fn take(&self, ros_message: *mut std::os::raw::c_void, taken: *mut bool) -> Result<()> {
         unsafe { *taken = false; }
-        if let Ok(sample) = self.inner.queue.try_recv() {
+        let queue = self.inner.queue.as_ref()
+            .ok_or_else(|| zenoh::Error::from("Subscriber was built with callback, no queue available"))?;
+        if let Ok(sample) = queue.try_recv() {
             // Deserialize the sample payload into ros_message using ts
             // Assume the payload is CDR serialized
             let payload = sample.payload();
@@ -60,7 +61,9 @@ impl SubscriptionImpl {
         taken: *mut bool,
     ) -> Result<()> {
         unsafe { *taken = false; }
-        if let Ok(sample) = self.inner.queue.try_recv() {
+        let queue = self.inner.queue.as_ref()
+            .ok_or_else(|| zenoh::Error::from("Subscriber was built with callback, no queue available"))?;
+        if let Ok(sample) = queue.try_recv() {
             // Deserialize the sample payload into ros_message using ts
             let payload = sample.payload();
             let bytes = payload.to_bytes().to_vec();
@@ -111,7 +114,9 @@ impl SubscriptionImpl {
         taken: *mut bool,
     ) -> Result<()> {
         unsafe { *taken = false; }
-        if let Ok(sample) = self.inner.queue.try_recv() {
+        let queue = self.inner.queue.as_ref()
+            .ok_or_else(|| zenoh::Error::from("Subscriber was built with callback, no queue available"))?;
+        if let Ok(sample) = queue.try_recv() {
             let payload = sample.payload();
             let bytes = payload.to_bytes();
 
@@ -163,11 +168,11 @@ impl SubscriptionImpl {
 
 impl Waitable for SubscriptionImpl {
     fn is_ready(&self) -> bool {
-        let inner_ref = &self.inner;
-        let queue_ref = &inner_ref.queue;
-        let len = queue_ref.len();
-        let result = len > 0;
-        result
+        if let Some(queue) = self.inner.queue.as_ref() {
+            !queue.is_empty()
+        } else {
+            false
+        }
     }
 }
 
@@ -221,7 +226,7 @@ pub extern "C" fn rmw_publisher_count_matched_subscriptions(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let publisher_impl = match publisher.borrow_data() {
+    let _publisher_impl = match publisher.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
@@ -436,7 +441,7 @@ pub extern "C" fn rmw_subscription_count_matched_publishers(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let subscription_impl = match subscription.borrow_data() {
+    let _subscription_impl = match subscription.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };

@@ -1,4 +1,4 @@
-![allow(unused)]
+#![allow(unused)]
 
 use std::{
     collections::HashMap,
@@ -147,14 +147,11 @@ where
     T: ZService,
 {
     pub async fn send_request(&self, msg: &T::Request) -> Result<()> {
-        eprintln!("🔵 [ZClient::send_request] Sending request");
         let tx = self.tx.clone();
-        eprintln!("🔵 [ZClient::send_request] About to call .wait()");
-        let result = self.inner
+        self.inner
             .get()
             .payload(msg.serialize())
             .attachment(self.new_attchment())
-            .timeout(std::time::Duration::from_secs(5)) // Add explicit timeout
             .callback(move |reply| {
                 tracing::trace!("ZClient received reply in callback");
                 match reply.into_result() {

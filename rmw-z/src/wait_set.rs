@@ -1,4 +1,4 @@
-use crate::traits::{Waitable, BorrowData, OwnData};
+use crate::traits::{Waitable, OwnData};
 use crate::ros::*;
 
 /// Wait set implementation for RMW
@@ -37,7 +37,7 @@ impl WaitSetImpl {
         // Poll until something is ready or timeout expires
         loop {
             // Check if any waitable is ready
-            for (idx, sub_impl_ptr) in self.subscriptions.iter().enumerate() {
+            for sub_impl_ptr in self.subscriptions.iter() {
                 if sub_impl_ptr.is_null() {
                     continue;
                 }
