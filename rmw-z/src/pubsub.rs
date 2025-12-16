@@ -72,14 +72,11 @@ impl SubscriptionImpl {
                     // Extract timestamp from attachment
                     let source_timestamp = if let Some(attachment_bytes) = sample.attachment() {
                         if let Ok(attachment) = ros_z::attachment::Attachment::try_from(attachment_bytes) {
-                            eprintln!("[take_with_info] Extracted timestamp from attachment: {}", attachment.source_timestamp);
                             attachment.source_timestamp
                         } else {
-                            eprintln!("[take_with_info] Failed to deserialize attachment");
                             0
                         }
                     } else {
-                        eprintln!("[take_with_info] Sample has NO attachment!");
                         0
                     };
 
@@ -166,19 +163,10 @@ impl SubscriptionImpl {
 
 impl Waitable for SubscriptionImpl {
     fn is_ready(&self) -> bool {
-        eprintln!("[SubscriptionImpl] Checking if ready...");
-        eprintln!("[SubscriptionImpl] self pointer: {:?}", self as *const _);
-        eprintln!("[SubscriptionImpl] About to access inner field...");
         let inner_ref = &self.inner;
-        eprintln!("[SubscriptionImpl] Got inner reference");
-        eprintln!("[SubscriptionImpl] About to access queue field...");
         let queue_ref = &inner_ref.queue;
-        eprintln!("[SubscriptionImpl] Got queue reference");
-        eprintln!("[SubscriptionImpl] About to call len()...");
         let len = queue_ref.len();
-        eprintln!("[SubscriptionImpl] Queue len: {}", len);
         let result = len > 0;
-        eprintln!("[SubscriptionImpl] is_ready result: {}", result);
         result
     }
 }

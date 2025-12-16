@@ -307,12 +307,17 @@ pub extern "C" fn rmw_create_client(
         }
     };
 
+    eprintln!("🔵 [CLIENT] Creating client for service: {}", qualified_service);
+
     let zclient = match node_impl
         .inner
         .create_client::<crate::msg::RosService>(&qualified_service)
         .build()
     {
-        Ok(client) => client,
+        Ok(client) => {
+            eprintln!("🔵 [CLIENT] Client created successfully");
+            client
+        },
         Err(e) => {
             tracing::error!("Failed to create client: {}", e);
             return std::ptr::null_mut();
@@ -405,12 +410,17 @@ pub extern "C" fn rmw_create_service(
         }
     };
 
+    eprintln!("🟢 [SERVER] Creating server for service: {}", qualified_service);
+
     let zserver = match node_impl
         .inner
         .create_service::<crate::msg::RosService>(&qualified_service)
         .build()
     {
-        Ok(server) => server,
+        Ok(server) => {
+            eprintln!("🟢 [SERVER] Server created successfully");
+            server
+        },
         Err(e) => {
             tracing::error!("Failed to create service: {}", e);
             return std::ptr::null_mut();

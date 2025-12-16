@@ -24,6 +24,8 @@ pub struct ClientImpl {
 
 impl ClientImpl {
     pub fn send_request(&self, request: *const c_void, sequence_id: *mut i64) -> Result<()> {
+        eprintln!("🔵 [ClientImpl::send_request] CALLED for service: {}", self.service_name);
+
         // Create RosMessage from the raw pointer using request MessageTypeSupport
         let req = crate::msg::RosMessage::new(request, self.request_ts.request);
 
@@ -31,7 +33,7 @@ impl ClientImpl {
         // This mirrors ZClient's internal sequence counter behavior
         let sn = self.sequence_counter.fetch_add(1, Ordering::AcqRel);
 
-        tracing::debug!("[ClientImpl::send_request] Sending request with sequence number: {}", sn);
+        eprintln!("🔵 [ClientImpl::send_request] Sending request with sequence number: {}", sn);
 
         // Send the request (ZClient will also increment its internal counter)
         self.inner.send_request(&req)?;

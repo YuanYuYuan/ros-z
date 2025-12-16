@@ -36,23 +36,17 @@ impl WaitSetImpl {
 
         // Poll until something is ready or timeout expires
         loop {
-            eprintln!("[wait_set] Polling, subscriptions count: {}", self.subscriptions.len());
             // Check if any waitable is ready
             for (idx, sub_impl_ptr) in self.subscriptions.iter().enumerate() {
-                eprintln!("[wait_set] Checking subscription {}, impl_ptr: {:?}", idx, sub_impl_ptr);
                 if sub_impl_ptr.is_null() {
-                    eprintln!("[wait_set] Subscription {} is null, skipping", idx);
                     continue;
                 }
                 unsafe {
                     // rmw_subscription_impl_t is an opaque type, but we know it's actually SubscriptionImpl
                     let sub_impl = &*((*sub_impl_ptr) as *const _ as *const crate::pubsub::SubscriptionImpl);
-                    eprintln!("[wait_set] Successfully cast subscription {}", idx);
                     if sub_impl.is_ready() {
-                        eprintln!("[wait_set] Subscription {} is ready!", idx);
                         return true;
                     }
-                    eprintln!("[wait_set] Subscription {} not ready yet", idx);
                 }
             }
             for gc_impl_ptr in &self.guard_conditions {
@@ -166,13 +160,10 @@ pub extern "C" fn rmw_wait(
     // Add subscriptions to wait set
     if !subscriptions.is_null() {
         let sub_array = unsafe { &*subscriptions };
-        eprintln!("[rmw_wait] Adding {} subscriptions", sub_array.subscriber_count);
-        eprintln!("[rmw_wait] subscribers ptr: {:?}", sub_array.subscribers);
         for i in 0..sub_array.subscriber_count {
             // subscribers is *mut *mut c_void, so subscribers.add(i) gives *mut *mut c_void
             // We dereference once to get *mut c_void, which points to rmw_subscription_impl_t
             let sub_impl = unsafe { *sub_array.subscribers.add(i) as *mut rmw_subscription_impl_t };
-            eprintln!("[rmw_wait] sub_impl[{}]: {:?}", i, sub_impl);
             if !sub_impl.is_null() {
                 wait_set_impl.subscriptions.push(sub_impl);
             }

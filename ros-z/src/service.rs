@@ -1,4 +1,4 @@
-#![allow(unused)]
+![allow(unused)]
 
 use std::{
     collections::HashMap,
@@ -69,7 +69,7 @@ where
         self.entity.topic = qualified_service;
 
         let key_expr = self.entity.topic_key_expr()?;
-        tracing::debug!("[CLN] KE: {key_expr}");
+        eprintln!("🔵 [CLN] KE: {key_expr}");
 
         let inner = self.session.declare_querier(key_expr)
             .target(zenoh::query::QueryTarget::AllComplete)
@@ -132,7 +132,6 @@ where
         let msg = <T::Response as ZMessage>::deserialize(&sample.payload().to_bytes());
         Ok(msg)
     }
-
     pub async fn take_response_async(&self) -> Result<T::Response>
     where
         for<'c> T::Response: ZMessage<Serdes = CdrSerdes<T::Response>> + Deserialize<'c>,
@@ -148,11 +147,14 @@ where
     T: ZService,
 {
     pub async fn send_request(&self, msg: &T::Request) -> Result<()> {
+        eprintln!("🔵 [ZClient::send_request] Sending request");
         let tx = self.tx.clone();
-        self.inner
+        eprintln!("🔵 [ZClient::send_request] About to call .wait()");
+        let result = self.inner
             .get()
             .payload(msg.serialize())
             .attachment(self.new_attchment())
+            .timeout(std::time::Duration::from_secs(5)) // Add explicit timeout
             .callback(move |reply| {
                 tracing::trace!("ZClient received reply in callback");
                 match reply.into_result() {
@@ -239,7 +241,7 @@ where
         self.entity.topic = qualified_service;
 
         let key_expr = self.entity.topic_key_expr()?;
-        tracing::debug!("[SRV] KE: {key_expr}");
+        eprintln!("🟢 [SRV] KE: {key_expr}");
 
         let (tx, rx) = flume::unbounded();
         let inner = self
@@ -399,16 +401,24 @@ where
     /// - `msg` is the response message to send.
     /// - `key` is the query key of the request to reply to and is obtained from [take_request](Self::take_request) or [take_request_async](Self::take_request_async)
     pub fn send_response(&mut self, msg: &T::Response, key: &QueryKey) -> Result<()> {
+        eprintln!("🟢 [ZServer::send_response] Looking for query with key sn:{}, gid:{:?}", key.sn, key.gid);
+        eprintln!("🟢 [ZServer::send_response] Map has {} entries", self.map.len());
         match self.map.remove(key) {
             Some(query) => {
+                eprintln!("🟢 [ZServer::send_response] Found query, sending reply");
                 // Use the sequence number and GID from the request
                 let attachment = Attachment::new(key.sn, key.gid);
-                query
+                let result = query
                     .reply(&self.key_expr, msg.serialize())
                     .attachment(attachment)
-                    .wait()
+                    .wait();
+                eprintln!("🟢 [ZServer::send_response] Reply sent, result: {:?}", result.as_ref().map(|_| "OK").map_err(|e| e.to_string()));
+                result
             }
-            None => Err("Quey map doesn't contains {key}".into()),
+            None => {
+                eprintln!("🟢 [ZServer::send_response] Query NOT found in map!");
+                Err("Quey map doesn't contains {key}".into())
+            }
         }
     }
 
