@@ -142,6 +142,7 @@ impl ZNode {
         ZSubBuilder {
             entity,
             session: self.session.clone(),
+            ignore_local_publications: false,
             _phantom_data: Default::default(),
         }
     }

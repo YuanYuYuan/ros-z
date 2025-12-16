@@ -280,6 +280,16 @@ impl TryFrom<EndpointEntity> for LivelinessKE {
     }
 }
 
+impl TryFrom<&Entity> for LivelinessKE {
+    type Error = zenoh::Error;
+    fn try_from(value: &Entity) -> std::result::Result<Self, Self::Error> {
+        match value {
+            Entity::Node(node) => LivelinessKE::try_from(node),
+            Entity::Endpoint(endpoint) => LivelinessKE::try_from(endpoint),
+        }
+    }
+}
+
 impl Display for EndpointEntity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ke: LivelinessKE = self.try_into().expect("Failed to parse EndpointEntity");
@@ -351,7 +361,7 @@ impl EndpointEntity {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum Entity {
     Node(NodeEntity),
     Endpoint(EndpointEntity),

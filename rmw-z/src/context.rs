@@ -218,7 +218,10 @@ pub extern "C" fn rmw_init(
     // Assign implementation
     match context.assign_impl(context_impl) {
         Ok(_) => {
-            unsafe { (*context).instance_id = 1 }; // TODO: proper instance ID
+            unsafe {
+                (*context).instance_id = 1; // TODO: proper instance ID
+                (*context).actual_domain_id = domain_id; // Set the actual domain ID
+            }
             RMW_RET_OK as _
         }
         Err(_) => RMW_RET_ERROR as _,

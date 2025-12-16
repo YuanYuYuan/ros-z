@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::{marker::PhantomData, sync::Arc};
 
 use zenoh::liveliness::LivelinessToken;
-use zenoh::{Result, Session, Wait, sample::Sample};
+use zenoh::{Result, Session, Wait, sample::{Locality, Sample}};
 use zenoh_ext::{AdvancedPublisher, CacheConfig, AdvancedPublisherBuilderExt};
 
 use crate::Builder;
@@ -182,6 +182,7 @@ where
 pub struct ZSubBuilder<T, S = CdrSerdes<T>> {
     pub entity: EndpointEntity,
     pub session: Arc<Session>,
+    pub ignore_local_publications: bool,
     pub _phantom_data: PhantomData<(T, S)>,
 }
 
@@ -194,10 +195,16 @@ where
         self
     }
 
+    pub fn ignore_local_publications(mut self, ignore: bool) -> Self {
+        self.ignore_local_publications = ignore;
+        self
+    }
+
     pub fn with_serdes<S2>(self) -> ZSubBuilder<T, S2> {
         ZSubBuilder {
             entity: self.entity,
             session: self.session,
+            ignore_local_publications: self.ignore_local_publications,
             _phantom_data: PhantomData,
         }
     }
@@ -232,9 +239,16 @@ where
         self.entity.topic = qualified_topic;
 
         // Create Zenoh subscriber with inline callback that deserializes
-        let inner = self
+        let mut sub_builder = self
             .session
-            .declare_subscriber(self.entity.topic_key_expr()?)
+            .declare_subscriber(self.entity.topic_key_expr()?);
+
+        // If ignore_local_publications is true, only receive samples from remote sessions
+        if self.ignore_local_publications {
+            sub_builder = sub_builder.allowed_origin(Locality::Remote);
+        }
+
+        let inner = sub_builder
             .callback(move |sample| {
                 let payload = sample.payload().to_bytes();
                 let msg = S::deserialize(&payload);
@@ -283,9 +297,16 @@ where
         };
 
         let (tx, rx) = flume::bounded(queue_size);
-        let inner = self
+        let mut sub_builder = self
             .session
-            .declare_subscriber(self.entity.topic_key_expr()?)
+            .declare_subscriber(self.entity.topic_key_expr()?);
+
+        // If ignore_local_publications is true, only receive samples from remote sessions
+        if self.ignore_local_publications {
+            sub_builder = sub_builder.allowed_origin(Locality::Remote);
+        }
+
+        let inner = sub_builder
             .callback(move |sample| {
                 let _ = tx.send(sample);
                 notify();
@@ -333,9 +354,16 @@ where
         };
 
         let (tx, rx) = flume::bounded(queue_size);
-        let inner = self
+        let mut sub_builder = self
             .session
-            .declare_subscriber(self.entity.topic_key_expr()?)
+            .declare_subscriber(self.entity.topic_key_expr()?);
+
+        // If ignore_local_publications is true, only receive samples from remote sessions
+        if self.ignore_local_publications {
+            sub_builder = sub_builder.allowed_origin(Locality::Remote);
+        }
+
+        let inner = sub_builder
             .callback(move |sample| {
                 let _ = tx.send(sample);
             })

@@ -241,6 +241,103 @@ impl Graph {
         }
     }
 
+    /// Add a local entity to the graph for immediate discovery
+    /// This is used to make local publishers/subscriptions/services/clients
+    /// immediately visible in graph queries without waiting for Zenoh liveliness propagation
+    pub fn add_local_entity(&self, entity: Entity) -> Result<()> {
+        let mut data = self.data.lock();
+
+        // Create LivelinessKE from entity
+        let ke = LivelinessKE::try_from(&entity)?;
+
+        // Create Arc for the entity and weak reference
+        let arc = Arc::new(entity.clone());
+        let weak = Arc::downgrade(&arc);
+
+        // Store in parsed HashMap
+        data.parsed.insert(ke, arc.clone());
+
+        // Add to appropriate indexes
+        match &entity {
+            Entity::Node(node) => {
+                let slab = data
+                    .by_node
+                    .entry(node.key())
+                    .or_insert_with(|| Slab::with_capacity(DEFAULT_SLAB_CAPACITY));
+
+                if slab.len() >= slab.capacity() {
+                    slab.retain(|_, weak_ptr| weak_ptr.upgrade().is_some());
+                }
+                slab.insert(weak);
+            }
+            Entity::Endpoint(endpoint) => {
+                // Index by topic for Publisher/Subscription
+                if matches!(endpoint.kind, EntityKind::Publisher | EntityKind::Subscription) {
+                    let topic_slab = data
+                        .by_topic
+                        .entry(endpoint.topic.clone())
+                        .or_insert_with(|| Slab::with_capacity(DEFAULT_SLAB_CAPACITY));
+
+                    if topic_slab.len() >= topic_slab.capacity() {
+                        topic_slab.retain(|_, weak_ptr| weak_ptr.upgrade().is_some());
+                    }
+                    topic_slab.insert(weak.clone());
+                }
+
+                // Index by service for Service/Client
+                if matches!(endpoint.kind, EntityKind::Service | EntityKind::Client) {
+                    let service_slab = data
+                        .by_service
+                        .entry(endpoint.topic.clone())
+                        .or_insert_with(|| Slab::with_capacity(DEFAULT_SLAB_CAPACITY));
+
+                    if service_slab.len() >= service_slab.capacity() {
+                        service_slab.retain(|_, weak_ptr| weak_ptr.upgrade().is_some());
+                    }
+                    service_slab.insert(weak.clone());
+                }
+
+                // Index by node
+                let node_slab = data
+                    .by_node
+                    .entry(endpoint.node.key())
+                    .or_insert_with(|| Slab::with_capacity(DEFAULT_SLAB_CAPACITY));
+
+                if node_slab.len() >= node_slab.capacity() {
+                    node_slab.retain(|_, weak_ptr| weak_ptr.upgrade().is_some());
+                }
+                node_slab.insert(weak);
+            }
+        }
+
+        // Release lock before triggering events
+        drop(data);
+
+        // Trigger graph change event
+        self.event_manager.trigger_graph_change(&entity, true, self.zid);
+
+        Ok(())
+    }
+
+    /// Remove a local entity from the graph
+    pub fn remove_local_entity(&self, entity: &Entity) -> Result<()> {
+        let mut data = self.data.lock();
+
+        // Create LivelinessKE from entity
+        let ke = LivelinessKE::try_from(entity)?;
+
+        // Remove from parsed HashMap
+        data.parsed.remove(&ke);
+
+        // Release lock before triggering events
+        drop(data);
+
+        // Trigger graph change event
+        self.event_manager.trigger_graph_change(entity, false, self.zid);
+
+        Ok(())
+    }
+
     pub fn count(&self, kind: EntityKind, name: impl AsRef<str>) -> usize {
         assert!(kind != EntityKind::Node);
         let mut total = 0;

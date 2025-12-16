@@ -91,6 +91,7 @@ pub extern "C" fn rmw_create_publisher(
     };
 
     let qualified_topic = zpub.entity.topic.clone();
+    let entity = zpub.entity.clone();
     let topic_cstr = match std::ffi::CString::new(qualified_topic) {
         Ok(cstr) => cstr,
         Err(e) => {
@@ -108,7 +109,13 @@ pub extern "C" fn rmw_create_publisher(
         options: unsafe { *publisher_options },
         qos: unsafe { *qos_profile },
         graph: node_impl.graph.clone(),
+        entity: entity.clone(),
     };
+
+    // Add local entity to graph for immediate discovery
+    if let Err(e) = publisher_impl.graph.add_local_entity(ros_z::entity::Entity::Endpoint(entity)) {
+        eprintln!("[rmw_z] rmw_create_publisher: Failed to add local entity to graph: {:?}", e);
+    }
 
     // Box the publisher_impl first so the topic CString lives on the heap
     let publisher_impl_boxed = Box::new(publisher_impl);
@@ -133,6 +140,14 @@ pub extern "C" fn rmw_destroy_publisher(
 ) -> rmw_ret_t {
     if node.is_null() || publisher.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    // Remove local entity from graph
+    if let Ok(publisher_impl) = publisher.borrow_data() {
+        let entity = ros_z::entity::Entity::Endpoint(publisher_impl.entity.clone());
+        if let Err(e) = publisher_impl.graph.remove_local_entity(&entity) {
+            eprintln!("[rmw_z] rmw_destroy_publisher: Failed to remove local entity from graph: {:?}", e);
+        }
     }
 
     drop(unsafe { Box::from_raw(publisher) });
@@ -200,11 +215,17 @@ pub extern "C" fn rmw_create_subscription(
         .with_serdes::<crate::msg::RosSerdes>();
     let qos = crate::qos::rmw_qos_to_ros_z_qos(unsafe { &*qos_policies });
     let zsub_builder = zsub_builder.with_qos(qos);
+
+    // Apply ignore_local_publications option if requested
+    let ignore_local = unsafe { (*subscription_options).ignore_local_publications };
+    let zsub_builder = zsub_builder.ignore_local_publications(ignore_local);
+
     let zsub = match zsub_builder.build() {
         Ok(zsub) => zsub,
         Err(_) => return std::ptr::null_mut(),
     };
 
+    let entity = zsub.entity.clone();
     let topic_cstr = match std::ffi::CString::new(topic_str) {
         Ok(cstr) => cstr,
         Err(_) => return std::ptr::null_mut(),
@@ -219,7 +240,13 @@ pub extern "C" fn rmw_create_subscription(
         callback: std::sync::Mutex::new(None),
         callback_user_data: std::sync::Mutex::new(std::ptr::null()),
         graph: node_impl.graph.clone(),
+        entity: entity.clone(),
     };
+
+    // Add local entity to graph for immediate discovery
+    if let Err(e) = subscription_impl.graph.add_local_entity(ros_z::entity::Entity::Endpoint(entity)) {
+        eprintln!("[rmw_z] rmw_create_subscription: Failed to add local entity to graph: {:?}", e);
+    }
 
     let subscription = Box::new(rmw_subscription_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
@@ -245,6 +272,14 @@ pub extern "C" fn rmw_destroy_subscription(
 ) -> rmw_ret_t {
     if node.is_null() || subscription.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    // Remove local entity from graph
+    if let Ok(subscription_impl) = subscription.borrow_data() {
+        let entity = ros_z::entity::Entity::Endpoint(subscription_impl.entity.clone());
+        if let Err(e) = subscription_impl.graph.remove_local_entity(&entity) {
+            eprintln!("[rmw_z] rmw_destroy_subscription: Failed to remove local entity from graph: {:?}", e);
+        }
     }
 
     drop(unsafe { Box::from_raw(subscription) });
@@ -329,11 +364,22 @@ pub extern "C" fn rmw_create_client(
 
     eprintln!("🔵 [CLIENT] Creating client for service: {}", qualified_service);
 
-    let zclient = match node_impl
+    let service_type_support =
+        match unsafe { crate::type_support::ServiceTypeSupport::new(type_support) } {
+            Ok(ts) => ts,
+            Err(e) => {
+                tracing::error!("Failed to create service type support: {}", e);
+                return std::ptr::null_mut();
+            }
+        };
+
+    let zclient_builder = node_impl
         .inner
         .create_client::<crate::msg::RosService>(&qualified_service)
-        .build()
-    {
+        .with_type_info(service_type_support.get_type_info());
+    let entity = zclient_builder.entity.clone();
+
+    let zclient = match zclient_builder.build() {
         Ok(client) => {
             eprintln!("🔵 [CLIENT] Client created successfully");
             client
@@ -349,15 +395,6 @@ pub extern "C" fn rmw_create_client(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let service_type_support =
-        match unsafe { crate::type_support::ServiceTypeSupport::new(type_support) } {
-            Ok(ts) => ts,
-            Err(e) => {
-                tracing::error!("Failed to create service type support: {}", e);
-                return std::ptr::null_mut();
-            }
-        };
-
     let client_impl = crate::service::ClientImpl {
         inner: zclient,
         service_name: qualified_service,
@@ -369,7 +406,14 @@ pub extern "C" fn rmw_create_client(
         callback: std::sync::Mutex::new(None),
         callback_user_data: std::sync::Mutex::new(std::ptr::null()),
         sequence_counter: std::sync::atomic::AtomicI64::new(1), // Start at 1 for ROS compatibility
+        graph: node_impl.graph.clone(),
+        entity: entity.clone(),
     };
+
+    // Add local entity to graph for immediate discovery
+    if let Err(e) = client_impl.graph.add_local_entity(ros_z::entity::Entity::Endpoint(entity)) {
+        eprintln!("[rmw_z] rmw_create_client: Failed to add local entity to graph: {:?}", e);
+    }
 
     let client = Box::new(rmw_client_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
@@ -390,6 +434,14 @@ pub extern "C" fn rmw_destroy_client(
 ) -> rmw_ret_t {
     if node.is_null() || client.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    // Remove local entity from graph
+    if let Ok(client_impl) = client.borrow_data() {
+        let entity = ros_z::entity::Entity::Endpoint(client_impl.entity.clone());
+        if let Err(e) = client_impl.graph.remove_local_entity(&entity) {
+            eprintln!("[rmw_z] rmw_destroy_client: Failed to remove local entity from graph: {:?}", e);
+        }
     }
 
     drop(unsafe { Box::from_raw(client) });
@@ -432,11 +484,22 @@ pub extern "C" fn rmw_create_service(
 
     eprintln!("🟢 [SERVER] Creating server for service: {}", qualified_service);
 
-    let zserver = match node_impl
+    let service_type_support =
+        match unsafe { crate::type_support::ServiceTypeSupport::new(type_support) } {
+            Ok(ts) => ts,
+            Err(e) => {
+                tracing::error!("Failed to create service type support: {}", e);
+                return std::ptr::null_mut();
+            }
+        };
+
+    let zserver_builder = node_impl
         .inner
         .create_service::<crate::msg::RosService>(&qualified_service)
-        .build()
-    {
+        .with_type_info(service_type_support.get_type_info());
+    let entity = zserver_builder.entity.clone();
+
+    let zserver = match zserver_builder.build() {
         Ok(server) => {
             eprintln!("🟢 [SERVER] Server created successfully");
             server
@@ -452,15 +515,6 @@ pub extern "C" fn rmw_create_service(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let service_type_support =
-        match unsafe { crate::type_support::ServiceTypeSupport::new(type_support) } {
-            Ok(ts) => ts,
-            Err(e) => {
-                tracing::error!("Failed to create service type support: {}", e);
-                return std::ptr::null_mut();
-            }
-        };
-
     let service_impl = crate::service::ServiceImpl {
         inner: zserver,
         service_name: service_name_cstr,
@@ -469,7 +523,14 @@ pub extern "C" fn rmw_create_service(
         qos: unsafe { *qos_profile },
         callback: std::sync::Mutex::new(None),
         callback_user_data: std::sync::Mutex::new(std::ptr::null()),
+        graph: node_impl.graph.clone(),
+        entity: entity.clone(),
     };
+
+    // Add local entity to graph for immediate discovery
+    if let Err(e) = service_impl.graph.add_local_entity(ros_z::entity::Entity::Endpoint(entity)) {
+        eprintln!("[rmw_z] rmw_create_service: Failed to add local entity to graph: {:?}", e);
+    }
 
     let service = Box::new(rmw_service_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
@@ -497,6 +558,14 @@ pub extern "C" fn rmw_destroy_service(
 ) -> rmw_ret_t {
     if node.is_null() || service.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    // Remove local entity from graph
+    if let Ok(service_impl) = service.borrow_data() {
+        let entity = ros_z::entity::Entity::Endpoint(service_impl.entity.clone());
+        if let Err(e) = service_impl.graph.remove_local_entity(&entity) {
+            eprintln!("[rmw_z] rmw_destroy_service: Failed to remove local entity from graph: {:?}", e);
+        }
     }
 
     drop(unsafe { Box::from_raw(service) });

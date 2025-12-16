@@ -13,6 +13,7 @@ pub struct PublisherImpl {
     pub options: rmw_publisher_options_t,
     pub qos: rmw_qos_profile_t,
     pub graph: std::sync::Arc<ros_z::graph::Graph>,
+    pub entity: ros_z::entity::EndpointEntity,
 }
 
 impl PublisherImpl {
@@ -36,6 +37,7 @@ pub struct SubscriptionImpl {
     pub callback: std::sync::Mutex<rmw_subscription_new_message_callback_t>,
     pub callback_user_data: std::sync::Mutex<*const crate::c_void>,
     pub graph: std::sync::Arc<ros_z::graph::Graph>,
+    pub entity: ros_z::entity::EndpointEntity,
 }
 
 impl SubscriptionImpl {
@@ -226,14 +228,14 @@ pub extern "C" fn rmw_publisher_count_matched_subscriptions(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let _publisher_impl = match publisher.borrow_data() {
+    let publisher_impl = match publisher.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
-    // Count subscriptions with the same topic
-    // TODO: Implement proper counting with graph
-    let count = 1;
+    // Count subscriptions with the same topic using graph discovery
+    let topic_name = publisher_impl.topic.to_str().unwrap_or("");
+    let count = publisher_impl.graph.count(ros_z::entity::EntityKind::Subscription, topic_name);
 
     unsafe {
         *subscription_count = count;
@@ -441,14 +443,14 @@ pub extern "C" fn rmw_subscription_count_matched_publishers(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    let _subscription_impl = match subscription.borrow_data() {
+    let subscription_impl = match subscription.borrow_data() {
         Ok(impl_) => impl_,
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
-    // Count publishers with the same topic
-    // TODO: Implement proper counting with graph
-    let count = 1;
+    // Count publishers with the same topic using graph discovery
+    let topic_name = subscription_impl.topic.to_str().unwrap_or("");
+    let count = subscription_impl.graph.count(ros_z::entity::EntityKind::Publisher, topic_name);
 
     unsafe {
         *publisher_count = count;

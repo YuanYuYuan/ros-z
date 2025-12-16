@@ -20,6 +20,8 @@ pub struct ClientImpl {
     /// Sequence counter that mirrors ZClient's internal counter
     /// Must be kept in sync with inner.sn by calling fetch_add(1) for each request
     pub sequence_counter: AtomicI64,
+    pub graph: std::sync::Arc<ros_z::graph::Graph>,
+    pub entity: ros_z::entity::EndpointEntity,
 }
 
 impl ClientImpl {
@@ -118,6 +120,8 @@ pub struct ServiceImpl {
     pub qos: rmw_qos_profile_t,
     pub callback: Mutex<rmw_service_new_request_callback_t>,
     pub callback_user_data: Mutex<*const c_void>,
+    pub graph: std::sync::Arc<ros_z::graph::Graph>,
+    pub entity: ros_z::entity::EndpointEntity,
 }
 
 impl ServiceImpl {
