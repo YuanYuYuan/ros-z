@@ -168,8 +168,8 @@ where
         Ok(())
     }
 
-    #[cfg(feature = "rcl-z")]
-    pub fn rcl_send_request<F>(&self, msg: &T::Request, notify: F) -> Result<i64>
+    #[cfg(feature = "rmw-z")]
+    pub fn rmw_send_request<F>(&self, msg: &T::Request, notify: F) -> Result<i64>
     where
         F: Fn() + Send + Sync + 'static,
     {
@@ -273,7 +273,7 @@ impl<T> ZServerBuilder<T>
 where
     T: ZService,
 {
-    #[cfg(feature = "rcl-z")]
+    #[cfg(feature = "rmw-z")]
     pub fn build_with_notifier<F>(mut self, notify: F) -> Result<ZServer<T>>
     where
         F: Fn() + Send + Sync + 'static,

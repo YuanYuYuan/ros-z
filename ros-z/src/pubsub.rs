@@ -260,7 +260,7 @@ where
         })
     }
 
-    #[cfg(feature = "rcl-z")]
+    #[cfg(feature = "rmw-z")]
     pub fn build_with_notifier<F>(mut self, notify: F) -> Result<ZSub<T, Sample, S>>
     where
         F: Fn() + Send + Sync + 'static,

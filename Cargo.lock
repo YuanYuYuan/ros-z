@@ -691,6 +691,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -761,7 +774,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -800,7 +813,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1632,7 +1645,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2359,9 +2372,11 @@ dependencies = [
  "cdr-encoding",
  "clap",
  "csv",
+ "dashmap",
  "flume",
  "json5",
  "parking_lot",
+ "paste",
  "prost",
  "prost-build",
  "ros-z-msgs",
@@ -2371,7 +2386,9 @@ dependencies = [
  "slab",
  "strum",
  "tokio",
+ "tokio-util",
  "tracing",
+ "uuid",
  "zenoh",
  "zenoh-ext",
 ]
@@ -2417,12 +2434,13 @@ dependencies = [
  "ros-z-msgs",
  "serial_test",
  "tokio",
+ "zenoh",
 ]
 
 [[package]]
 name = "roslibrust"
-version = "0.17.0"
-source = "git+https://github.com/YuanYuYuan/roslibrust?branch=feat%2Fcodegen-options#f58184c1db6291d08d259338a1b249364988ab3e"
+version = "0.18.0"
+source = "git+https://github.com/YuanYuYuan/roslibrust?branch=feat%2Fros2-action-hash#50e871e35551de25697b9c1a0d101598a92947b6"
 dependencies = [
  "roslibrust_codegen",
  "roslibrust_common",
@@ -2430,8 +2448,8 @@ dependencies = [
 
 [[package]]
 name = "roslibrust_codegen"
-version = "0.17.0"
-source = "git+https://github.com/YuanYuYuan/roslibrust?branch=feat%2Fcodegen-options#f58184c1db6291d08d259338a1b249364988ab3e"
+version = "0.18.0"
+source = "git+https://github.com/YuanYuYuan/roslibrust?branch=feat%2Fros2-action-hash#50e871e35551de25697b9c1a0d101598a92947b6"
 dependencies = [
  "anyhow",
  "base64",
@@ -2456,8 +2474,8 @@ dependencies = [
 
 [[package]]
 name = "roslibrust_common"
-version = "0.17.0"
-source = "git+https://github.com/YuanYuYuan/roslibrust?branch=feat%2Fcodegen-options#f58184c1db6291d08d259338a1b249364988ab3e"
+version = "0.18.0"
+source = "git+https://github.com/YuanYuYuan/roslibrust?branch=feat%2Fros2-action-hash#50e871e35551de25697b9c1a0d101598a92947b6"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2521,7 +2539,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2588,7 +2606,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3219,7 +3237,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3853,7 +3871,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

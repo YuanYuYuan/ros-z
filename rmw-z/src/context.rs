@@ -24,9 +24,18 @@ pub struct ContextImpl {
 
 impl ContextImpl {
     pub fn new(domain_id: usize, enclave: String) -> Result<Self, String> {
-        // For now, create a default Zenoh session
-        // In a real implementation, this would be configured based on domain_id
-        let session = zenoh::open(zenoh::Config::default()).wait()
+        // Create Zenoh config with timestamping enabled
+        let mut config = zenoh::Config::default();
+
+        // Enable timestamping for AdvancedPublisher support
+        config.insert_json5("timestamping/enabled", "true")
+            .map_err(|e| format!("Failed to enable timestamping in config: {}", e))?;
+
+        // Disable multicast scouting to avoid conflicts
+        config.insert_json5("scouting/multicast/enabled", "false")
+            .map_err(|e| format!("Failed to configure scouting: {}", e))?;
+
+        let session = zenoh::open(config).wait()
             .map_err(|e| format!("Failed to create Zenoh session: {}", e))?;
         let counter = Arc::new(ros_z::context::GlobalCounter::default());
         let graph = ros_z::graph::Graph::new(&session, domain_id)

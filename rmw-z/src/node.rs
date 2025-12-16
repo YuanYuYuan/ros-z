@@ -150,10 +150,66 @@ pub extern "C" fn rmw_get_node_names(
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
+    // Get allocator from context
+    let allocator = unsafe { &(*(*node).context).options.allocator };
+
     // Query graph for all nodes
-    let _nodes = node_impl.graph.get_node_names();
-    // For now, just return OK with empty lists
-    // Full implementation would populate the string arrays
+    let nodes = node_impl.graph.get_node_names();
+    let node_count = nodes.len();
+
+    // Initialize string arrays
+    unsafe {
+        let ret = rcutils_string_array_init(node_names, node_count, allocator as *const _);
+        if ret != 0 {
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        let ret = rcutils_string_array_init(node_namespaces, node_count, allocator as *const _);
+        if ret != 0 {
+            // Clean up node_names on error
+            rcutils_string_array_fini(node_names);
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        // Populate the arrays
+        for (i, (name, namespace)) in nodes.iter().enumerate() {
+            let name_cstr = match std::ffi::CString::new(name.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rcutils_string_array_fini(node_names);
+                    rcutils_string_array_fini(node_namespaces);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+            let ns_cstr = match std::ffi::CString::new(namespace.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rcutils_string_array_fini(node_names);
+                    rcutils_string_array_fini(node_namespaces);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+
+            (*node_names).data.add(i).write(
+                rcutils_strdup(name_cstr.as_ptr(), *allocator)
+            );
+            if (*node_names).data.add(i).read().is_null() {
+                rcutils_string_array_fini(node_names);
+                rcutils_string_array_fini(node_namespaces);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            (*node_namespaces).data.add(i).write(
+                rcutils_strdup(ns_cstr.as_ptr(), *allocator)
+            );
+            if (*node_namespaces).data.add(i).read().is_null() {
+                rcutils_string_array_fini(node_names);
+                rcutils_string_array_fini(node_namespaces);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+        }
+    }
+
     RMW_RET_OK as _
 }
 

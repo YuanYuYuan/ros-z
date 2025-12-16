@@ -53,7 +53,12 @@ pub extern "C" fn rmw_create_publisher(
 
     let node_impl = match node.borrow_data() {
         Ok(impl_) => impl_,
-        Err(_) => return std::ptr::null_mut(),
+        Err(e) => {
+            eprintln!("[rmw_z] rmw_create_publisher: Failed to borrow node data: {:?}", e);
+            let msg = std::ffi::CString::new("Failed to get node implementation").unwrap();
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), file!().as_ptr() as *const _, line!() as usize) };
+            return std::ptr::null_mut();
+        }
     };
 
     let topic_str = unsafe { std::ffi::CStr::from_ptr(topic_name) }
@@ -61,7 +66,12 @@ pub extern "C" fn rmw_create_publisher(
         .unwrap_or("");
     let ts = match unsafe { crate::type_support::MessageTypeSupport::new(type_support) } {
         Ok(ts) => ts,
-        Err(_) => return std::ptr::null_mut(),
+        Err(e) => {
+            eprintln!("[rmw_z] rmw_create_publisher: Failed to create type support: {:?}", e);
+            let msg = std::ffi::CString::new(format!("Failed to create type support: {}", e)).unwrap_or_else(|_| std::ffi::CString::new("Failed to create type support").unwrap());
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), file!().as_ptr() as *const _, line!() as usize) };
+            return std::ptr::null_mut();
+        }
     };
 
     let zpub_builder = node_impl
@@ -72,13 +82,23 @@ pub extern "C" fn rmw_create_publisher(
     let zpub_builder = zpub_builder.with_qos(qos);
     let zpub = match zpub_builder.build() {
         Ok(zpub) => zpub,
-        Err(_) => return std::ptr::null_mut(),
+        Err(e) => {
+            eprintln!("[rmw_z] rmw_create_publisher: Failed to build ZPub: {:?}", e);
+            let msg = std::ffi::CString::new(format!("Failed to build publisher: {}", e)).unwrap_or_else(|_| std::ffi::CString::new("Failed to build publisher").unwrap());
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), file!().as_ptr() as *const _, line!() as usize) };
+            return std::ptr::null_mut();
+        }
     };
 
     let qualified_topic = zpub.entity.topic.clone();
     let topic_cstr = match std::ffi::CString::new(qualified_topic) {
         Ok(cstr) => cstr,
-        Err(_) => return std::ptr::null_mut(),
+        Err(e) => {
+            eprintln!("[rmw_z] rmw_create_publisher: Failed to create CString for topic: {:?}", e);
+            let msg = std::ffi::CString::new("Failed to create topic string").unwrap();
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), file!().as_ptr() as *const _, line!() as usize) };
+            return std::ptr::null_mut();
+        }
     };
 
     let publisher_impl = PublisherImpl {
@@ -509,8 +529,95 @@ pub extern "C" fn rmw_get_topic_names_and_types(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // Since graph cache is not implemented in rmw-z, return unsupported
-    RMW_RET_UNSUPPORTED as _
+    let node_impl = match node.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Get topic names and types from graph
+    let topics_and_types = node_impl.graph.get_topic_names_and_types();
+
+    // Group by topic name
+    let mut topic_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (topic, type_name) in topics_and_types {
+        topic_map.entry(topic).or_insert_with(Vec::new).push(type_name);
+    }
+
+    let topic_count = topic_map.len();
+
+    // Initialize names_and_types
+    unsafe {
+        let ret = rmw_names_and_types_init(
+            topic_names_and_types,
+            topic_count,
+            allocator as *mut _,
+        );
+        if ret != RMW_RET_OK as i32 {
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        // Populate the arrays
+        let mut index = 0;
+        for (topic_name, type_names) in topic_map.iter() {
+            // Set topic name
+            let topic_cstr = match std::ffi::CString::new(topic_name.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rmw_names_and_types_fini(topic_names_and_types);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+
+            (*topic_names_and_types).names.data.add(index).write(
+                rcutils_strdup(topic_cstr.as_ptr(), *allocator),
+            );
+            if (*topic_names_and_types).names.data.add(index).read().is_null() {
+                rmw_names_and_types_fini(topic_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            // Initialize types array for this topic
+            let ret = rcutils_string_array_init(
+                (*topic_names_and_types).types.add(index),
+                type_names.len(),
+                allocator,
+            );
+            if ret != 0 {
+                rmw_names_and_types_fini(topic_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            // Populate type names
+            for (type_index, type_name) in type_names.iter().enumerate() {
+                let type_cstr = match std::ffi::CString::new(type_name.as_str()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        rmw_names_and_types_fini(topic_names_and_types);
+                        return RMW_RET_ERROR as _;
+                    }
+                };
+
+                (*(*topic_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .write(rcutils_strdup(type_cstr.as_ptr(), *allocator));
+                if (*(*topic_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .read()
+                    .is_null()
+                {
+                    rmw_names_and_types_fini(topic_names_and_types);
+                    return RMW_RET_BAD_ALLOC as _;
+                }
+            }
+
+            index += 1;
+        }
+    }
+
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]
@@ -523,8 +630,95 @@ pub extern "C" fn rmw_get_service_names_and_types(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // Since graph cache is not implemented in rmw-z, return unsupported
-    RMW_RET_UNSUPPORTED as _
+    let node_impl = match node.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Get service names and types from graph
+    let services_and_types = node_impl.graph.get_service_names_and_types();
+
+    // Group by service name
+    let mut service_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (service, type_name) in services_and_types {
+        service_map.entry(service).or_insert_with(Vec::new).push(type_name);
+    }
+
+    let service_count = service_map.len();
+
+    // Initialize names_and_types
+    unsafe {
+        let ret = rmw_names_and_types_init(
+            service_names_and_types,
+            service_count,
+            allocator as *mut _,
+        );
+        if ret != RMW_RET_OK as i32 {
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        // Populate the arrays
+        let mut index = 0;
+        for (service_name, type_names) in service_map.iter() {
+            // Set service name
+            let service_cstr = match std::ffi::CString::new(service_name.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rmw_names_and_types_fini(service_names_and_types);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+
+            (*service_names_and_types).names.data.add(index).write(
+                rcutils_strdup(service_cstr.as_ptr(), *allocator),
+            );
+            if (*service_names_and_types).names.data.add(index).read().is_null() {
+                rmw_names_and_types_fini(service_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            // Initialize types array for this service
+            let ret = rcutils_string_array_init(
+                (*service_names_and_types).types.add(index),
+                type_names.len(),
+                allocator,
+            );
+            if ret != 0 {
+                rmw_names_and_types_fini(service_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            // Populate type names
+            for (type_index, type_name) in type_names.iter().enumerate() {
+                let type_cstr = match std::ffi::CString::new(type_name.as_str()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        rmw_names_and_types_fini(service_names_and_types);
+                        return RMW_RET_ERROR as _;
+                    }
+                };
+
+                (*(*service_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .write(rcutils_strdup(type_cstr.as_ptr(), *allocator));
+                if (*(*service_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .read()
+                    .is_null()
+                {
+                    rmw_names_and_types_fini(service_names_and_types);
+                    return RMW_RET_BAD_ALLOC as _;
+                }
+            }
+
+            index += 1;
+        }
+    }
+
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]
@@ -693,8 +887,110 @@ pub extern "C" fn rmw_get_subscriber_names_and_types_by_node(
     if node.is_null() || allocator.is_null() || node_name.is_null() || node_namespace.is_null() || topic_names_and_types.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
-    // Since graph cache is not implemented in rmw-z, return unsupported
-    RMW_RET_UNSUPPORTED as _
+
+    let node_impl = match node.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Convert node name and namespace to strings
+    let target_node_name = match unsafe { std::ffi::CStr::from_ptr(node_name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+    let target_node_ns = match unsafe { std::ffi::CStr::from_ptr(node_namespace) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let node_key = (target_node_ns.to_string(), target_node_name.to_string());
+
+    // Get entities for this node
+    let entities_and_types = node_impl.graph.get_names_and_types_by_node(
+        node_key,
+        ros_z::entity::EntityKind::Subscription,
+    );
+
+    // Group by entity name
+    let mut entity_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (name, type_name) in entities_and_types {
+        entity_map.entry(name).or_insert_with(Vec::new).push(type_name);
+    }
+
+    let entity_count = entity_map.len();
+
+    // Initialize names_and_types
+    unsafe {
+        let ret = rmw_names_and_types_init(
+            topic_names_and_types,
+            entity_count,
+            allocator as *mut _,
+        );
+        if ret != RMW_RET_OK as i32 {
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        // Populate the arrays
+        let mut index = 0;
+        for (entity_name, type_names) in entity_map.iter() {
+            let entity_cstr = match std::ffi::CString::new(entity_name.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rmw_names_and_types_fini(topic_names_and_types);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+
+            (*topic_names_and_types).names.data.add(index).write(
+                rcutils_strdup(entity_cstr.as_ptr(), *allocator),
+            );
+            if (*topic_names_and_types).names.data.add(index).read().is_null() {
+                rmw_names_and_types_fini(topic_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            // Initialize types array
+            let ret = rcutils_string_array_init(
+                (*topic_names_and_types).types.add(index),
+                type_names.len(),
+                allocator,
+            );
+            if ret != 0 {
+                rmw_names_and_types_fini(topic_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            // Populate type names
+            for (type_index, type_name) in type_names.iter().enumerate() {
+                let type_cstr = match std::ffi::CString::new(type_name.as_str()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        rmw_names_and_types_fini(topic_names_and_types);
+                        return RMW_RET_ERROR as _;
+                    }
+                };
+
+                (*(*topic_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .write(rcutils_strdup(type_cstr.as_ptr(), *allocator));
+                if (*(*topic_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .read()
+                    .is_null()
+                {
+                    rmw_names_and_types_fini(topic_names_and_types);
+                    return RMW_RET_BAD_ALLOC as _;
+                }
+            }
+
+            index += 1;
+        }
+    }
+
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]
@@ -1176,25 +1472,221 @@ pub extern "C" fn rmw_get_clients_info_by_service(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_get_client_names_and_types_by_node(
-    _node: *const rmw_node_t,
-    _allocator: *const rcl_allocator_t,
-    _node_name: *const std::os::raw::c_char,
-    _node_namespace: *const std::os::raw::c_char,
-    _service_names_and_types: *mut rmw_names_and_types_t,
+    node: *const rmw_node_t,
+    allocator: *const rcl_allocator_t,
+    node_name: *const std::os::raw::c_char,
+    node_namespace: *const std::os::raw::c_char,
+    service_names_and_types: *mut rmw_names_and_types_t,
 ) -> rmw_ret_t {
-    RMW_RET_UNSUPPORTED as _
+    if node.is_null() || allocator.is_null() || node_name.is_null() || node_namespace.is_null() || service_names_and_types.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    let node_impl = match node.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let target_node_name = match unsafe { std::ffi::CStr::from_ptr(node_name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+    let target_node_ns = match unsafe { std::ffi::CStr::from_ptr(node_namespace) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let node_key = (target_node_ns.to_string(), target_node_name.to_string());
+    let entities_and_types = node_impl.graph.get_names_and_types_by_node(
+        node_key,
+        ros_z::entity::EntityKind::Client,
+    );
+
+    let mut entity_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (name, type_name) in entities_and_types {
+        entity_map.entry(name).or_insert_with(Vec::new).push(type_name);
+    }
+
+    let entity_count = entity_map.len();
+
+    unsafe {
+        let ret = rmw_names_and_types_init(
+            service_names_and_types,
+            entity_count,
+            allocator as *mut _,
+        );
+        if ret != RMW_RET_OK as i32 {
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        let mut index = 0;
+        for (entity_name, type_names) in entity_map.iter() {
+            let entity_cstr = match std::ffi::CString::new(entity_name.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rmw_names_and_types_fini(service_names_and_types);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+
+            (*service_names_and_types).names.data.add(index).write(
+                rcutils_strdup(entity_cstr.as_ptr(), *allocator),
+            );
+            if (*service_names_and_types).names.data.add(index).read().is_null() {
+                rmw_names_and_types_fini(service_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            let ret = rcutils_string_array_init(
+                (*service_names_and_types).types.add(index),
+                type_names.len(),
+                allocator,
+            );
+            if ret != 0 {
+                rmw_names_and_types_fini(service_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            for (type_index, type_name) in type_names.iter().enumerate() {
+                let type_cstr = match std::ffi::CString::new(type_name.as_str()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        rmw_names_and_types_fini(service_names_and_types);
+                        return RMW_RET_ERROR as _;
+                    }
+                };
+
+                (*(*service_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .write(rcutils_strdup(type_cstr.as_ptr(), *allocator));
+                if (*(*service_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .read()
+                    .is_null()
+                {
+                    rmw_names_and_types_fini(service_names_and_types);
+                    return RMW_RET_BAD_ALLOC as _;
+                }
+            }
+
+            index += 1;
+        }
+    }
+
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_get_publisher_names_and_types_by_node(
-    _node: *const rmw_node_t,
-    _allocator: *const rcl_allocator_t,
-    _node_name: *const std::os::raw::c_char,
-    _node_namespace: *const std::os::raw::c_char,
+    node: *const rmw_node_t,
+    allocator: *const rcl_allocator_t,
+    node_name: *const std::os::raw::c_char,
+    node_namespace: *const std::os::raw::c_char,
     _no_demangle: bool,
-    _topic_names_and_types: *mut rmw_names_and_types_t,
+    topic_names_and_types: *mut rmw_names_and_types_t,
 ) -> rmw_ret_t {
-    RMW_RET_UNSUPPORTED as _
+    if node.is_null() || allocator.is_null() || node_name.is_null() || node_namespace.is_null() || topic_names_and_types.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    let node_impl = match node.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let target_node_name = match unsafe { std::ffi::CStr::from_ptr(node_name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+    let target_node_ns = match unsafe { std::ffi::CStr::from_ptr(node_namespace) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let node_key = (target_node_ns.to_string(), target_node_name.to_string());
+    let entities_and_types = node_impl.graph.get_names_and_types_by_node(
+        node_key,
+        ros_z::entity::EntityKind::Publisher,
+    );
+
+    let mut entity_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (name, type_name) in entities_and_types {
+        entity_map.entry(name).or_insert_with(Vec::new).push(type_name);
+    }
+
+    let entity_count = entity_map.len();
+
+    unsafe {
+        let ret = rmw_names_and_types_init(
+            topic_names_and_types,
+            entity_count,
+            allocator as *mut _,
+        );
+        if ret != RMW_RET_OK as i32 {
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        let mut index = 0;
+        for (entity_name, type_names) in entity_map.iter() {
+            let entity_cstr = match std::ffi::CString::new(entity_name.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rmw_names_and_types_fini(topic_names_and_types);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+
+            (*topic_names_and_types).names.data.add(index).write(
+                rcutils_strdup(entity_cstr.as_ptr(), *allocator),
+            );
+            if (*topic_names_and_types).names.data.add(index).read().is_null() {
+                rmw_names_and_types_fini(topic_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            let ret = rcutils_string_array_init(
+                (*topic_names_and_types).types.add(index),
+                type_names.len(),
+                allocator,
+            );
+            if ret != 0 {
+                rmw_names_and_types_fini(topic_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            for (type_index, type_name) in type_names.iter().enumerate() {
+                let type_cstr = match std::ffi::CString::new(type_name.as_str()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        rmw_names_and_types_fini(topic_names_and_types);
+                        return RMW_RET_ERROR as _;
+                    }
+                };
+
+                (*(*topic_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .write(rcutils_strdup(type_cstr.as_ptr(), *allocator));
+                if (*(*topic_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .read()
+                    .is_null()
+                {
+                    rmw_names_and_types_fini(topic_names_and_types);
+                    return RMW_RET_BAD_ALLOC as _;
+                }
+            }
+
+            index += 1;
+        }
+    }
+
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]
@@ -1210,13 +1702,111 @@ pub extern "C" fn rmw_get_servers_info_by_service(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_get_service_names_and_types_by_node(
-    _node: *const rmw_node_t,
-    _allocator: *const rcl_allocator_t,
-    _node_name: *const std::os::raw::c_char,
-    _node_namespace: *const std::os::raw::c_char,
-    _service_names_and_types: *mut rmw_names_and_types_t,
+    node: *const rmw_node_t,
+    allocator: *const rcl_allocator_t,
+    node_name: *const std::os::raw::c_char,
+    node_namespace: *const std::os::raw::c_char,
+    service_names_and_types: *mut rmw_names_and_types_t,
 ) -> rmw_ret_t {
-    RMW_RET_UNSUPPORTED as _
+    if node.is_null() || allocator.is_null() || node_name.is_null() || node_namespace.is_null() || service_names_and_types.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    let node_impl = match node.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let target_node_name = match unsafe { std::ffi::CStr::from_ptr(node_name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+    let target_node_ns = match unsafe { std::ffi::CStr::from_ptr(node_namespace) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let node_key = (target_node_ns.to_string(), target_node_name.to_string());
+    let entities_and_types = node_impl.graph.get_names_and_types_by_node(
+        node_key,
+        ros_z::entity::EntityKind::Service,
+    );
+
+    let mut entity_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for (name, type_name) in entities_and_types {
+        entity_map.entry(name).or_insert_with(Vec::new).push(type_name);
+    }
+
+    let entity_count = entity_map.len();
+
+    unsafe {
+        let ret = rmw_names_and_types_init(
+            service_names_and_types,
+            entity_count,
+            allocator as *mut _,
+        );
+        if ret != RMW_RET_OK as i32 {
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        let mut index = 0;
+        for (entity_name, type_names) in entity_map.iter() {
+            let entity_cstr = match std::ffi::CString::new(entity_name.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rmw_names_and_types_fini(service_names_and_types);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+
+            (*service_names_and_types).names.data.add(index).write(
+                rcutils_strdup(entity_cstr.as_ptr(), *allocator),
+            );
+            if (*service_names_and_types).names.data.add(index).read().is_null() {
+                rmw_names_and_types_fini(service_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            let ret = rcutils_string_array_init(
+                (*service_names_and_types).types.add(index),
+                type_names.len(),
+                allocator,
+            );
+            if ret != 0 {
+                rmw_names_and_types_fini(service_names_and_types);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            for (type_index, type_name) in type_names.iter().enumerate() {
+                let type_cstr = match std::ffi::CString::new(type_name.as_str()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        rmw_names_and_types_fini(service_names_and_types);
+                        return RMW_RET_ERROR as _;
+                    }
+                };
+
+                (*(*service_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .write(rcutils_strdup(type_cstr.as_ptr(), *allocator));
+                if (*(*service_names_and_types).types.add(index))
+                    .data
+                    .add(type_index)
+                    .read()
+                    .is_null()
+                {
+                    rmw_names_and_types_fini(service_names_and_types);
+                    return RMW_RET_BAD_ALLOC as _;
+                }
+            }
+
+            index += 1;
+        }
+    }
+
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]

@@ -35,9 +35,9 @@ impl ClientImpl {
 
         eprintln!("🔵 [ClientImpl::send_request] Sending request with sequence number: {}", sn);
 
-        // Send the request using rcl_send_request (synchronous version)
+        // Send the request using rmw_send_request (synchronous version)
         // We don't need a notify callback for RMW
-        let _ = self.inner.rcl_send_request(&req, || {})?;
+        let _ = self.inner.rmw_send_request(&req, || {})?;
 
         // Return the sequence number we tracked
         unsafe { *sequence_id = sn; }
