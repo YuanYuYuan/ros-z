@@ -130,11 +130,19 @@ where
             return Err(ImplAccessError::NullSelfPtr);
         }
         unsafe {
+            eprintln!("[borrow_data] self ptr: {:?}", self);
             let data_ptr = (*self).get_data();
+            eprintln!("[borrow_data] data_ptr (as CImplType): {:?}", data_ptr);
             if data_ptr.is_null() {
                 return Err(ImplAccessError::NullImplPtr);
             }
-            Ok(&*(data_ptr as *const _))
+            // Cast through void pointer to get the actual Rust type
+            // data_ptr is *mut CImplType (opaque), but we stored *mut ImplType
+            let void_ptr = data_ptr as *const std::os::raw::c_void;
+            eprintln!("[borrow_data] void_ptr: {:?}", void_ptr);
+            let impl_ptr = void_ptr as *const T::ImplType;
+            eprintln!("[borrow_data] impl_ptr (as ImplType): {:?}", impl_ptr);
+            Ok(&*impl_ptr)
         }
     }
 }
@@ -152,7 +160,8 @@ where
             if data_ptr.is_null() {
                 return Err(ImplAccessError::NullImplPtr);
             }
-            Ok(&mut *(data_ptr as *mut _))
+            // Cast through void pointer to get the actual Rust type
+            Ok(&mut *(data_ptr as *mut std::os::raw::c_void as *mut T::ImplType))
         }
     }
 

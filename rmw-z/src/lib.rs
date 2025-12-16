@@ -34,7 +34,7 @@ unsafe impl cxx::ExternType for c_void {
 }
 
 // RMW implementation identifier (null-terminated for C compatibility)
-pub const RMW_ZENOH_IDENTIFIER: &[u8] = b"rmw_z\0";
+pub const RMW_ZENOH_IDENTIFIER: &[u8] = b"rmw_zenoh_rs\0";
 
 // Serialization format (null-terminated for C compatibility)
 pub const RMW_ZENOH_SERIALIZATION_FORMAT: &[u8] = b"cdr\0";

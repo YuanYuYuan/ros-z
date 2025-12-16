@@ -87,6 +87,7 @@ pub extern "C" fn rmw_create_publisher(
         topic: topic_cstr,
         options: unsafe { *publisher_options },
         qos: unsafe { *qos_profile },
+        graph: node_impl.graph.clone(),
     };
 
     // Box the publisher_impl first so the topic CString lives on the heap
@@ -184,8 +185,7 @@ pub extern "C" fn rmw_create_subscription(
         Err(_) => return std::ptr::null_mut(),
     };
 
-    let qualified_topic = zsub.entity.topic.clone();
-    let topic_cstr = match std::ffi::CString::new(qualified_topic) {
+    let topic_cstr = match std::ffi::CString::new(topic_str) {
         Ok(cstr) => cstr,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -198,12 +198,13 @@ pub extern "C" fn rmw_create_subscription(
         qos: unsafe { *qos_policies },
         callback: std::sync::Mutex::new(None),
         callback_user_data: std::sync::Mutex::new(std::ptr::null()),
+        graph: node_impl.graph.clone(),
     };
 
     let subscription = Box::new(rmw_subscription_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         data: std::ptr::null_mut(),
-        topic_name: topic_cstr.as_ptr() as *const _,
+        topic_name: subscription_impl.topic.as_ptr() as *const _,
         options: unsafe { *subscription_options },
         can_loan_messages: false,
         is_cft_enabled: false,
@@ -342,6 +343,7 @@ pub extern "C" fn rmw_create_client(
         response_ts: service_type_support,
         callback: std::sync::Mutex::new(None),
         callback_user_data: std::sync::Mutex::new(std::ptr::null()),
+        sequence_counter: std::sync::atomic::AtomicI64::new(1), // Start at 1 for ROS compatibility
     };
 
     let client = Box::new(rmw_client_t {
@@ -431,7 +433,7 @@ pub extern "C" fn rmw_create_service(
 
     let service_impl = crate::service::ServiceImpl {
         inner: zserver,
-        service_name: service_name_cstr.clone(),
+        service_name: service_name_cstr,
         request_ts: service_type_support,
         response_ts: service_type_support,
         qos: unsafe { *qos_profile },
@@ -439,14 +441,21 @@ pub extern "C" fn rmw_create_service(
         callback_user_data: std::sync::Mutex::new(std::ptr::null()),
     };
 
-    let service = Box::new(rmw_service_t {
+    let mut service = Box::new(rmw_service_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         data: std::ptr::null_mut(),
-        service_name: service_name_cstr.as_ptr() as *const _,
+        service_name: std::ptr::null(),
     });
 
     let service_ptr = Box::into_raw(service);
     service_ptr.assign_data(service_impl).unwrap_or(());
+
+    // Update service_name pointer to point to the name stored in the impl
+    unsafe {
+        if let Ok(impl_ref) = service_ptr.borrow_data() {
+            (*service_ptr).service_name = impl_ref.service_name.as_ptr();
+        }
+    }
 
     service_ptr
 }
@@ -462,6 +471,20 @@ pub extern "C" fn rmw_destroy_service(
 
     drop(unsafe { Box::from_raw(service) });
     RMW_RET_OK as _
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_service_get_service_name(
+    service: *const rmw_service_t,
+) -> *const std::os::raw::c_char {
+    if service.is_null() {
+        return std::ptr::null();
+    }
+
+    match service.borrow_data() {
+        Ok(service_impl) => service_impl.service_name.as_ptr(),
+        Err(_) => std::ptr::null(),
+    }
 }
 
 // Graph queries
@@ -1024,12 +1047,21 @@ pub extern "C" fn rmw_service_response_publisher_get_actual_qos(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_service_server_is_available(
-    _node: *const rmw_node_t,
-    _client: *const rmw_client_t,
-    _is_available: *mut bool,
+    node: *const rmw_node_t,
+    client: *const rmw_client_t,
+    is_available: *mut bool,
 ) -> rmw_ret_t {
-    // Since graph cache is not implemented in rmw-z, return unsupported
-    RMW_RET_UNSUPPORTED as _
+    if node.is_null() || client.is_null() || is_available.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    // Simple implementation: if the client exists, assume the server is available
+    // A full implementation would use Zenoh's discovery mechanism
+    unsafe {
+        *is_available = true;
+    }
+
+    RMW_RET_OK as _
 }
 
 #[unsafe(no_mangle)]

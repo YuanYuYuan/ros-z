@@ -96,6 +96,10 @@
                 launch
                 launch-testing
                 ros2cli
+                osrf-testing-tools-cpp
+                mimick-vendor
+                performance-test-fixture
+                python-cmake-module
               ];
             };
           in

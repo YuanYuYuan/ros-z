@@ -21,7 +21,7 @@ ros-z = { workspace = true, features = ["rmw-z"] }
 strum = { workspace = true, features = ["derive"] }
 
 [lib]
-name = "rmw_z"
+name = "rmw_zenoh_rs"
 crate-type = ["cdylib", "rlib"]
 
 [build-dependencies]

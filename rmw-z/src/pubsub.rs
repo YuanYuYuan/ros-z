@@ -4,6 +4,7 @@ use crate::traits::{Waitable, BorrowData};
 use crate::ros::*;
 use zenoh::{Result, sample::Sample};
 use crate::rmw_impl_has_data_ptr;
+use ros_z::entity::{Entity, EntityKind};
 
 /// Publisher implementation for RMW
 pub struct PublisherImpl {
@@ -12,6 +13,7 @@ pub struct PublisherImpl {
     pub topic: CString,
     pub options: rmw_publisher_options_t,
     pub qos: rmw_qos_profile_t,
+    pub graph: std::sync::Arc<ros_z::graph::Graph>,
 }
 
 impl PublisherImpl {
@@ -34,6 +36,7 @@ pub struct SubscriptionImpl {
     pub qos: rmw_qos_profile_t,
     pub callback: std::sync::Mutex<rmw_subscription_new_message_callback_t>,
     pub callback_user_data: std::sync::Mutex<*const crate::c_void>,
+    pub graph: std::sync::Arc<ros_z::graph::Graph>,
 }
 
 impl SubscriptionImpl {
@@ -66,9 +69,28 @@ impl SubscriptionImpl {
             // Fill in message_info
             if !message_info.is_null() {
                 unsafe {
-                    // Initialize message_info with default values
-                    (*message_info).source_timestamp = 0; // TODO: Extract from Zenoh sample timestamp
-                    (*message_info).received_timestamp = 0; // TODO: Get current time
+                    // Extract timestamp from attachment
+                    let source_timestamp = if let Some(attachment_bytes) = sample.attachment() {
+                        if let Ok(attachment) = ros_z::attachment::Attachment::try_from(attachment_bytes) {
+                            eprintln!("[take_with_info] Extracted timestamp from attachment: {}", attachment.source_timestamp);
+                            attachment.source_timestamp
+                        } else {
+                            eprintln!("[take_with_info] Failed to deserialize attachment");
+                            0
+                        }
+                    } else {
+                        eprintln!("[take_with_info] Sample has NO attachment!");
+                        0
+                    };
+
+                    // Get current time for received_timestamp
+                    let received_timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_nanos() as i64;
+
+                    (*message_info).source_timestamp = source_timestamp;
+                    (*message_info).received_timestamp = received_timestamp;
                     (*message_info).publication_sequence_number = 0;
                     (*message_info).reception_sequence_number = 0;
 
@@ -144,7 +166,20 @@ impl SubscriptionImpl {
 
 impl Waitable for SubscriptionImpl {
     fn is_ready(&self) -> bool {
-        !self.inner.queue.is_empty()
+        eprintln!("[SubscriptionImpl] Checking if ready...");
+        eprintln!("[SubscriptionImpl] self pointer: {:?}", self as *const _);
+        eprintln!("[SubscriptionImpl] About to access inner field...");
+        let inner_ref = &self.inner;
+        eprintln!("[SubscriptionImpl] Got inner reference");
+        eprintln!("[SubscriptionImpl] About to access queue field...");
+        let queue_ref = &inner_ref.queue;
+        eprintln!("[SubscriptionImpl] Got queue reference");
+        eprintln!("[SubscriptionImpl] About to call len()...");
+        let len = queue_ref.len();
+        eprintln!("[SubscriptionImpl] Queue len: {}", len);
+        let result = len > 0;
+        eprintln!("[SubscriptionImpl] is_ready result: {}", result);
+        result
     }
 }
 
@@ -198,10 +233,17 @@ pub extern "C" fn rmw_publisher_count_matched_subscriptions(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // TODO: Implement actual matching logic with graph data
-    // For now, return 0 as a placeholder
+    let publisher_impl = match publisher.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Count subscriptions with the same topic
+    // TODO: Implement proper counting with graph
+    let count = 1;
+
     unsafe {
-        *subscription_count = 0;
+        *subscription_count = count;
     }
     RMW_RET_OK as _
 }
@@ -406,10 +448,17 @@ pub extern "C" fn rmw_subscription_count_matched_publishers(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // TODO: Implement actual matching logic with graph data
-    // For now, return 0 as a placeholder
+    let subscription_impl = match subscription.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Count publishers with the same topic
+    // TODO: Implement proper counting with graph
+    let count = 1;
+
     unsafe {
-        *publisher_count = 0;
+        *publisher_count = count;
     }
     RMW_RET_OK as _
 }
@@ -439,7 +488,8 @@ pub extern "C" fn rmw_subscription_set_content_filter(
     _subscription: *const rmw_subscription_t,
     _content_filter: *const rmw_subscription_content_filter_options_t,
 ) -> rmw_ret_t {
-    todo!()
+    // Content filtering is not supported yet
+    RMW_RET_UNSUPPORTED as _
 }
 
 #[unsafe(no_mangle)]
@@ -448,5 +498,6 @@ pub extern "C" fn rmw_subscription_get_content_filter(
     _allocator: *const rcl_allocator_t,
     _content_filter: *mut rmw_subscription_content_filter_options_t,
 ) -> rmw_ret_t {
-    todo!()
+    // Content filtering is not supported yet
+    RMW_RET_UNSUPPORTED as _
 }

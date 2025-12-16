@@ -1,5 +1,6 @@
 use std::ffi::CString;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use crate::traits::{Waitable, BorrowData, OwnData};
 use crate::ros::*;
@@ -16,6 +17,9 @@ pub struct ClientImpl {
     pub response_ts: crate::type_support::ServiceTypeSupport,
     pub callback: Mutex<rmw_client_new_response_callback_t>,
     pub callback_user_data: Mutex<*const c_void>,
+    /// Sequence counter that mirrors ZClient's internal counter
+    /// Must be kept in sync with inner.sn by calling fetch_add(1) for each request
+    pub sequence_counter: AtomicI64,
 }
 
 impl ClientImpl {
@@ -23,10 +27,19 @@ impl ClientImpl {
         // Create RosMessage from the raw pointer using request MessageTypeSupport
         let req = crate::msg::RosMessage::new(request, self.request_ts.request);
 
-        // Send the request
+        // Get the sequence number before sending (fetch_add returns old value before incrementing)
+        // This mirrors ZClient's internal sequence counter behavior
+        let sn = self.sequence_counter.fetch_add(1, Ordering::AcqRel);
+
+        tracing::debug!("[ClientImpl::send_request] Sending request with sequence number: {}", sn);
+
+        // Send the request (ZClient will also increment its internal counter)
         self.inner.send_request(&req)?;
-        // TODO: Get actual sequence number from the send_request result
-        unsafe { *sequence_id = 0; }
+
+        // Return the sequence number we tracked
+        unsafe { *sequence_id = sn; }
+
+        tracing::debug!("[ClientImpl::send_request] Request sent successfully, returned sn: {}", sn);
         Ok(())
     }
 
@@ -38,8 +51,13 @@ impl ClientImpl {
     ) -> Result<()> {
         unsafe { *taken = false; }
 
+        tracing::debug!("[ClientImpl::take_response] Attempting to take response, rx has {} items",
+                       if self.inner.rx.is_empty() { 0 } else { self.inner.rx.len() });
+
         // Try to receive a response
         if let Ok(sample) = self.inner.rx.try_recv() {
+            tracing::debug!("[ClientImpl::take_response] Got response sample");
+
             let payload = sample.payload();
             let bytes = payload.to_bytes().to_vec();
 
@@ -48,18 +66,43 @@ impl ClientImpl {
 
             // Fill request_header
             if !request_header.is_null() {
-                unsafe {
-                    // Extract sequence number from attachment if available
-                    (*request_header).request_id.sequence_number = 0; // TODO: extract from sample
-                    for i in 0..16 {
-                        (*request_header).request_id.writer_guid[i] = 0; // TODO: extract GID
+                // Extract sequence number and GID from attachment if available
+                let (sn, gid, source_timestamp) = if let Some(attachment_bytes) = sample.attachment() {
+                    match ros_z::attachment::Attachment::try_from(attachment_bytes) {
+                        Ok(attachment) => {
+                            tracing::debug!("[ClientImpl::take_response] Extracted attachment: sn={}, gid={:?}",
+                                          attachment.sequence_number, attachment.source_gid);
+                            (attachment.sequence_number, attachment.source_gid, attachment.source_timestamp)
+                        }
+                        Err(e) => {
+                            tracing::warn!("[ClientImpl::take_response] Failed to extract attachment: {}", e);
+                            (0, [0u8; 16], 0)
+                        }
                     }
-                    (*request_header).source_timestamp = 0;
-                    (*request_header).received_timestamp = 0;
+                } else {
+                    tracing::warn!("[ClientImpl::take_response] No attachment in response");
+                    (0, [0u8; 16], 0)
+                };
+
+                // Set received_timestamp to current time
+                let received_timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |v| v.as_nanos() as i64);
+
+                unsafe {
+                    (*request_header).request_id.sequence_number = sn;
+                    for i in 0..16 {
+                        (*request_header).request_id.writer_guid[i] = gid[i];
+                    }
+                    (*request_header).source_timestamp = source_timestamp;
+                    (*request_header).received_timestamp = received_timestamp;
                 }
             }
 
             unsafe { *taken = true; }
+            tracing::debug!("[ClientImpl::take_response] Response taken successfully");
+        } else {
+            tracing::debug!("[ClientImpl::take_response] No response available in rx channel");
         }
         Ok(())
     }
@@ -94,20 +137,55 @@ impl ServiceImpl {
                 return Ok(());
             };
 
-            // TODO: Extract proper QueryKey from query attachments
-            // For now, use a placeholder key
-            let key = ros_z::service::QueryKey {
-                gid: [0u8; 16], // Placeholder GID
-                sn: 0i64, // Placeholder sequence number
+            // Extract attachment from query to get GID, sequence number, and timestamp
+            let key = if let Some(attachment_bytes) = query.attachment() {
+                match ros_z::attachment::Attachment::try_from(attachment_bytes) {
+                    Ok(attachment) => {
+                        let key: ros_z::service::QueryKey = attachment.into();
+                        tracing::debug!("[ServiceImpl::take_request] Got request with sn: {}, gid: {:?}", key.sn, key.gid);
+                        key
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to extract attachment from query: {}", e);
+                        // Fallback to placeholder
+                        ros_z::service::QueryKey {
+                            gid: [0u8; 16],
+                            sn: 0i64,
+                        }
+                    }
+                }
+            } else {
+                tracing::warn!("No attachment in query, using placeholder QueryKey");
+                ros_z::service::QueryKey {
+                    gid: [0u8; 16],
+                    sn: 0i64,
+                }
             };
 
+            // Extract timestamp from attachment
+            let source_timestamp = if let Some(attachment_bytes) = query.attachment() {
+                match ros_z::attachment::Attachment::try_from(attachment_bytes) {
+                    Ok(attachment) => attachment.source_timestamp,
+                    Err(_) => 0,
+                }
+            } else {
+                0
+            };
+
+            // Set received_timestamp to current time
+            let received_timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |v| v.as_nanos() as i64);
+
             // Store the query for later response
+            tracing::debug!("[ServiceImpl::take_request] Storing query with key sn:{}, inserting into map", key.sn);
             self.inner.map.insert(key.clone(), query);
+            tracing::debug!("[ServiceImpl::take_request] Map now has {} entries", self.inner.map.len());
 
             // Deserialize into the provided request buffer using request MessageTypeSupport
             unsafe { self.request_ts.request.deserialize_message(&bytes, request as *mut _); }
 
-            // Fill request_header with sequence info
+            // Fill request_header with sequence info and timestamps
             if !request_header.is_null() {
                 unsafe {
                     (*request_header).request_id.sequence_number = key.sn;
@@ -117,8 +195,8 @@ impl ServiceImpl {
                             (*request_header).request_id.writer_guid[i] = byte;
                         }
                     }
-                    (*request_header).source_timestamp = 0;
-                    (*request_header).received_timestamp = 0;
+                    (*request_header).source_timestamp = source_timestamp;
+                    (*request_header).received_timestamp = received_timestamp;
                 }
             }
 
@@ -142,12 +220,23 @@ impl ServiceImpl {
             }
         };
 
+        tracing::debug!("[ServiceImpl::send_response] Sending response for key sn:{}, gid:{:?}", key.sn, key.gid);
+        tracing::debug!("[ServiceImpl::send_response] Map has {} entries before send_response", self.inner.map.len());
+
         // Create RosMessage Response from the raw pointer using response MessageTypeSupport
         let resp = crate::msg::RosMessage::new(response, self.response_ts.response);
 
         // Send response
-        self.inner.send_response(&resp, &key)?;
-        Ok(())
+        match self.inner.send_response(&resp, &key) {
+            Ok(_) => {
+                tracing::debug!("[ServiceImpl::send_response] Response sent successfully");
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("[ServiceImpl::send_response] Failed to send response: {}", e);
+                Err(e)
+            }
+        }
     }
 }
 

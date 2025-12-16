@@ -99,6 +99,56 @@ pub extern "C" fn rmw_init_options_copy(
     if src.is_null() || dst.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
+
+    unsafe {
+        // Check if dst is already initialized
+        if !(*dst).impl_.is_null() {
+            return RMW_RET_INVALID_ARGUMENT as _;
+        }
+
+        // Copy all fields from src to dst
+        (*dst).instance_id = (*src).instance_id;
+        (*dst).implementation_identifier = (*src).implementation_identifier;
+        (*dst).domain_id = (*src).domain_id;
+        (*dst).security_options = (*src).security_options;
+        (*dst).localhost_only = (*src).localhost_only;
+        (*dst).discovery_options = (*src).discovery_options;
+        (*dst).allocator = (*src).allocator;
+
+        // Copy enclave string if it exists
+        if !(*src).enclave.is_null() {
+            let enclave_cstr = std::ffi::CStr::from_ptr((*src).enclave);
+            let enclave_bytes = enclave_cstr.to_bytes_with_nul();
+            let allocator = &(*src).allocator;
+
+            if let Some(allocate) = allocator.allocate {
+                let new_enclave = allocate(
+                    enclave_bytes.len(),
+                    allocator.state,
+                ) as *mut std::os::raw::c_char;
+
+                if new_enclave.is_null() {
+                    return RMW_RET_BAD_ALLOC as _;
+                }
+
+                std::ptr::copy_nonoverlapping(
+                    enclave_bytes.as_ptr() as *const std::os::raw::c_char,
+                    new_enclave,
+                    enclave_bytes.len(),
+                );
+                (*dst).enclave = new_enclave;
+            } else {
+                // If no allocator, we can't copy the enclave string
+                return RMW_RET_INVALID_ARGUMENT as _;
+            }
+        } else {
+            (*dst).enclave = std::ptr::null_mut();
+        }
+
+        // For rmw_z, we don't have implementation-specific data, so impl_ is null
+        (*dst).impl_ = std::ptr::null_mut();
+    }
+
     RMW_RET_OK as _
 }
 
@@ -107,6 +157,27 @@ pub extern "C" fn rmw_init_options_fini(init_options: *mut rmw_init_options_t) -
     if init_options.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
+
+    unsafe {
+        // Free enclave string if it was allocated
+        if !(*init_options).enclave.is_null() {
+            let allocator = &(*init_options).allocator;
+            if let Some(deallocate) = allocator.deallocate {
+                deallocate(
+                    (*init_options).enclave as *mut _,
+                    allocator.state,
+                );
+                (*init_options).enclave = std::ptr::null_mut();
+            }
+        }
+
+        // Free impl if it exists (rmw_z doesn't use it, but be safe)
+        if !(*init_options).impl_.is_null() {
+            // For now, rmw_z doesn't allocate impl_, so nothing to do
+            (*init_options).impl_ = std::ptr::null_mut();
+        }
+    }
+
     RMW_RET_OK as _
 }
 

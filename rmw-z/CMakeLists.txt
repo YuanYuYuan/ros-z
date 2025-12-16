@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(rmw_z)
+project(rmw_zenoh_rs)
 
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
@@ -22,13 +22,13 @@ find_package(rosidl_typesupport_fastrtps_c REQUIRED)
 find_package(rosidl_typesupport_fastrtps_cpp REQUIRED)
 find_package(rmw REQUIRED)
 
-set(GENERATED_LIB_FILE ${CMAKE_CURRENT_BINARY_DIR}/release/librmw_z.so)
+set(GENERATED_LIB_FILE ${CMAKE_CURRENT_BINARY_DIR}/release/librmw_zenoh_rs.so)
 
 file(GLOB RUST_SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/src/*.rs"
 )
 
-add_library(rmw_z SHARED cpp/dummy_for_build.cpp)
+add_library(rmw_zenoh_rs SHARED cpp/dummy_for_build.cpp)
 
 set_source_files_properties(
   cpp/dummy_for_build.cpp
@@ -37,28 +37,28 @@ set_source_files_properties(
 )
 
 add_custom_command(
-  TARGET rmw_z
+  TARGET rmw_zenoh_rs
   POST_BUILD
   COMMAND cargo build --release --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml --target-dir ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "Building Rust library"
 )
 
-set_target_properties(rmw_z PROPERTIES
+set_target_properties(rmw_zenoh_rs PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/release"
-  OUTPUT_NAME "rmw_z"
+  OUTPUT_NAME "rmw_zenoh_rs"
 )
 
-configure_rmw_library(rmw_z)
+configure_rmw_library(rmw_zenoh_rs)
 
-ament_export_targets(export_rmw_z)
+ament_export_targets(export_rmw_zenoh_rs)
 
 register_rmw_implementation(
   "c:rosidl_typesupport_c:rosidl_typesupport_fastrtps_c:rosidl_typesupport_introspection_c"
   "cpp:rosidl_typesupport_cpp:rosidl_typesupport_fastrtps_cpp:rosidl_typesupport_introspection_cpp")
 
 install(
-  TARGETS rmw_z
-  EXPORT export_rmw_z
+  TARGETS rmw_zenoh_rs
+  EXPORT export_rmw_zenoh_rs
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin

@@ -190,7 +190,7 @@ pub fn qualify_topic_name(
             }
         }
 
-        if namespace.is_empty() {
+        if namespace.is_empty() || namespace == "/" {
             format!("/{}", topic)
         } else {
             format!("{}/{}", namespace, topic)
