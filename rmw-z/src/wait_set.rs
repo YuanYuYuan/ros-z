@@ -32,65 +32,85 @@ impl WaitSetImpl {
         };
 
         let start = Instant::now();
-        let poll_interval = Duration::from_millis(10);
 
-        // Poll until something is ready or timeout expires
-        loop {
-            // Check if any waitable is ready
-            for sub_impl_ptr in self.subscriptions.iter() {
-                if sub_impl_ptr.is_null() {
-                    continue;
-                }
-                unsafe {
-                    // rmw_subscription_impl_t is an opaque type, but we know it's actually SubscriptionImpl
-                    let sub_impl = &*((*sub_impl_ptr) as *const _ as *const crate::pubsub::SubscriptionImpl);
-                    if sub_impl.is_ready() {
-                        return true;
-                    }
-                }
-            }
-            for gc_impl_ptr in &self.guard_conditions {
-                if gc_impl_ptr.is_null() {
-                    continue;
-                }
-                unsafe {
-                    let gc_impl = &*(*gc_impl_ptr as *const _ as *const crate::guard_condition::GuardConditionImpl);
-                    if gc_impl.is_ready() {
-                        return true;
-                    }
-                }
-            }
-            for srv_impl_ptr in &self.services {
-                if srv_impl_ptr.is_null() {
-                    continue;
-                }
-                unsafe {
-                    let srv_impl = &*(*srv_impl_ptr as *const _ as *const crate::service::ServiceImpl);
-                    if srv_impl.is_ready() {
-                        return true;
-                    }
-                }
-            }
-            for cli_impl_ptr in &self.clients {
-                if cli_impl_ptr.is_null() {
-                    continue;
-                }
-                unsafe {
-                    let cli_impl = &*(*cli_impl_ptr as *const _ as *const crate::service::ClientImpl);
-                    if cli_impl.is_ready() {
-                        return true;
-                    }
-                }
-            }
+        // First check if anything is already ready
+        if self.check_ready() {
+            return true;
+        }
 
-            // Check if timeout has expired
-            if start.elapsed() >= timeout_duration {
-                return false;
-            }
+        // If timeout is zero, return immediately
+        if timeout.sec == 0 && timeout.nsec == 0 {
+            return false;
+        }
 
-            // Sleep briefly before polling again
+        // Wait for notifications or timeout
+        // For now, use a more responsive polling approach
+        let poll_interval = Duration::from_millis(1);
+
+        while start.elapsed() < timeout_duration {
+            if self.check_ready() {
+                return true;
+            }
             std::thread::sleep(poll_interval);
         }
+
+        false
+    }
+
+    fn check_ready(&self) -> bool {
+        // Check subscriptions
+        for sub_impl_ptr in self.subscriptions.iter() {
+            if sub_impl_ptr.is_null() {
+                continue;
+            }
+            unsafe {
+                let sub_impl = &*((*sub_impl_ptr) as *const _ as *const crate::pubsub::SubscriptionImpl);
+                if sub_impl.is_ready() {
+                    return true;
+                }
+            }
+        }
+
+        // Check guard conditions
+        for gc_impl_ptr in &self.guard_conditions {
+            if gc_impl_ptr.is_null() {
+                continue;
+            }
+            unsafe {
+                let gc_impl = &*(*gc_impl_ptr as *const _ as *const crate::guard_condition::GuardConditionImpl);
+                if gc_impl.is_ready() {
+                    return true;
+                }
+            }
+        }
+
+        // Check services
+        for srv_impl_ptr in &self.services {
+            if srv_impl_ptr.is_null() {
+                continue;
+            }
+            unsafe {
+                let srv_impl = &*(*srv_impl_ptr as *const _ as *const crate::service::ServiceImpl);
+                if srv_impl.is_ready() {
+                    return true;
+                }
+            }
+        }
+
+        // Check clients
+        for cli_impl_ptr in &self.clients {
+            if cli_impl_ptr.is_null() {
+                continue;
+            }
+            unsafe {
+                let cli_impl = &*(*cli_impl_ptr as *const _ as *const crate::service::ClientImpl);
+                if cli_impl.is_ready() {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 }
 

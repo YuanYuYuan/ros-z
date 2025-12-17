@@ -9,7 +9,6 @@ resolver = "2"
 members = [
   "ros-z",
   "ros-z-codegen",
-  "rcl-z",
   "rmw-z",
   "ros-z-msgs",
   "ros-z-tests",

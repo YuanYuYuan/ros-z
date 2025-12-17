@@ -114,9 +114,14 @@ impl EventsManager {
     }
 }
 
+// Callback type for triggering graph guard conditions
+pub type GraphGuardConditionTrigger = Box<dyn Fn(*mut std::ffi::c_void) + Send + Sync>;
+
 // GraphCache event integration
 pub struct GraphEventManager {
     event_callbacks: Mutex<HashMap<GidArray, HashMap<ZenohEventType, EventCallback>>>,
+    graph_guard_conditions: Mutex<Vec<usize>>, // Pointers as usize for Send
+    trigger_guard_condition: Mutex<Option<GraphGuardConditionTrigger>>,
 }
 
 impl Default for GraphEventManager {
@@ -129,7 +134,13 @@ impl GraphEventManager {
     pub fn new() -> Self {
         Self {
             event_callbacks: Mutex::new(HashMap::new()),
+            graph_guard_conditions: Mutex::new(Vec::new()),
+            trigger_guard_condition: Mutex::new(None),
         }
+    }
+
+    pub fn set_guard_condition_trigger(&self, trigger: GraphGuardConditionTrigger) {
+        *self.trigger_guard_condition.lock().unwrap() = Some(trigger);
     }
 
     pub fn register_event_callback<F>(
@@ -157,6 +168,17 @@ impl GraphEventManager {
         callbacks.remove(entity_gid);
     }
 
+    pub fn register_graph_guard_condition(&self, guard_condition: *mut std::ffi::c_void) {
+        let mut conditions = self.graph_guard_conditions.lock().unwrap();
+        conditions.push(guard_condition as usize);
+    }
+
+    pub fn unregister_graph_guard_condition(&self, guard_condition: *mut std::ffi::c_void) {
+        let mut conditions = self.graph_guard_conditions.lock().unwrap();
+        let gc_usize = guard_condition as usize;
+        conditions.retain(|&gc| gc != gc_usize);
+    }
+
     pub fn trigger_event(&self, entity_gid: &GidArray, event_type: ZenohEventType, change: i32) {
         let callbacks = self.event_callbacks.lock().unwrap();
         if let Some(entity_callbacks) = callbacks.get(entity_gid)
@@ -175,6 +197,15 @@ impl GraphEventManager {
             crate::entity::Entity::Node(node) => node.z_id == local_zid,
             crate::entity::Entity::Endpoint(endpoint) => endpoint.node.z_id == local_zid,
         };
+
+        // Trigger graph guard conditions for ALL graph changes (local and remote)
+        if let Some(ref trigger) = *self.trigger_guard_condition.lock().unwrap() {
+            let guard_conditions = self.graph_guard_conditions.lock().unwrap();
+            for &gc_usize in guard_conditions.iter() {
+                let gc = gc_usize as *mut std::ffi::c_void;
+                trigger(gc);
+            }
+        }
 
         // Don't trigger matched events for local entities
         // Matched events are only triggered when remote entities appear/disappear

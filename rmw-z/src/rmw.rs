@@ -56,7 +56,7 @@ pub extern "C" fn rmw_create_publisher(
         Err(e) => {
             eprintln!("[rmw_z] rmw_create_publisher: Failed to borrow node data: {:?}", e);
             let msg = std::ffi::CString::new("Failed to get node implementation").unwrap();
-            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), file!().as_ptr() as *const _, line!() as usize) };
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), cfile!(), line!() as usize) };
             return std::ptr::null_mut();
         }
     };
@@ -69,7 +69,7 @@ pub extern "C" fn rmw_create_publisher(
         Err(e) => {
             eprintln!("[rmw_z] rmw_create_publisher: Failed to create type support: {:?}", e);
             let msg = std::ffi::CString::new(format!("Failed to create type support: {}", e)).unwrap_or_else(|_| std::ffi::CString::new("Failed to create type support").unwrap());
-            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), file!().as_ptr() as *const _, line!() as usize) };
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), cfile!(), line!() as usize) };
             return std::ptr::null_mut();
         }
     };
@@ -85,7 +85,7 @@ pub extern "C" fn rmw_create_publisher(
         Err(e) => {
             eprintln!("[rmw_z] rmw_create_publisher: Failed to build ZPub: {:?}", e);
             let msg = std::ffi::CString::new(format!("Failed to build publisher: {}", e)).unwrap_or_else(|_| std::ffi::CString::new("Failed to build publisher").unwrap());
-            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), file!().as_ptr() as *const _, line!() as usize) };
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), cfile!(), line!() as usize) };
             return std::ptr::null_mut();
         }
     };
@@ -97,7 +97,7 @@ pub extern "C" fn rmw_create_publisher(
         Err(e) => {
             eprintln!("[rmw_z] rmw_create_publisher: Failed to create CString for topic: {:?}", e);
             let msg = std::ffi::CString::new("Failed to create topic string").unwrap();
-            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), file!().as_ptr() as *const _, line!() as usize) };
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), cfile!(), line!() as usize) };
             return std::ptr::null_mut();
         }
     };
@@ -397,7 +397,7 @@ pub extern "C" fn rmw_create_client(
 
     let client_impl = crate::service::ClientImpl {
         inner: zclient,
-        service_name: qualified_service,
+        service_name: service_cstr,
         options: rmw_client_options_t {
             qos: unsafe { *qos_policies },
         },
@@ -415,10 +415,13 @@ pub extern "C" fn rmw_create_client(
         eprintln!("[rmw_z] rmw_create_client: Failed to add local entity to graph: {:?}", e);
     }
 
+    // Get the service name pointer before moving client_impl
+    let service_name_ptr = client_impl.service_name.as_ptr();
+
     let client = Box::new(rmw_client_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         data: std::ptr::null_mut(),
-        service_name: service_cstr.as_ptr() as *const _,
+        service_name: service_name_ptr as *const _,
     });
 
     let client_ptr = Box::into_raw(client);
@@ -586,6 +589,20 @@ pub extern "C" fn rmw_service_get_service_name(
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_client_get_service_name(
+    client: *const rmw_client_t,
+) -> *const std::os::raw::c_char {
+    if client.is_null() {
+        return std::ptr::null();
+    }
+
+    match client.borrow_data() {
+        Ok(client_impl) => client_impl.service_name.as_ptr(),
+        Err(_) => std::ptr::null(),
+    }
+}
+
 // Graph queries
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_get_topic_names_and_types(
@@ -610,7 +627,7 @@ pub extern "C" fn rmw_get_topic_names_and_types(
     let mut topic_map: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
     for (topic, type_name) in topics_and_types {
-        topic_map.entry(topic).or_insert_with(Vec::new).push(type_name);
+        topic_map.entry(topic).or_default().push(type_name);
     }
 
     let topic_count = topic_map.len();
@@ -627,8 +644,7 @@ pub extern "C" fn rmw_get_topic_names_and_types(
         }
 
         // Populate the arrays
-        let mut index = 0;
-        for (topic_name, type_names) in topic_map.iter() {
+        for (index, (topic_name, type_names)) in topic_map.iter().enumerate() {
             // Set topic name
             let topic_cstr = match std::ffi::CString::new(topic_name.as_str()) {
                 Ok(s) => s,
@@ -682,7 +698,6 @@ pub extern "C" fn rmw_get_topic_names_and_types(
                 }
             }
 
-            index += 1;
         }
     }
 
@@ -711,7 +726,7 @@ pub extern "C" fn rmw_get_service_names_and_types(
     let mut service_map: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
     for (service, type_name) in services_and_types {
-        service_map.entry(service).or_insert_with(Vec::new).push(type_name);
+        service_map.entry(service).or_default().push(type_name);
     }
 
     let service_count = service_map.len();
@@ -728,8 +743,7 @@ pub extern "C" fn rmw_get_service_names_and_types(
         }
 
         // Populate the arrays
-        let mut index = 0;
-        for (service_name, type_names) in service_map.iter() {
+        for (index, (service_name, type_names)) in service_map.iter().enumerate() {
             // Set service name
             let service_cstr = match std::ffi::CString::new(service_name.as_str()) {
                 Ok(s) => s,
@@ -783,7 +797,6 @@ pub extern "C" fn rmw_get_service_names_and_types(
                 }
             }
 
-            index += 1;
         }
     }
 
@@ -984,7 +997,7 @@ pub extern "C" fn rmw_get_subscriber_names_and_types_by_node(
     let mut entity_map: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
     for (name, type_name) in entities_and_types {
-        entity_map.entry(name).or_insert_with(Vec::new).push(type_name);
+        entity_map.entry(name).or_default().push(type_name);
     }
 
     let entity_count = entity_map.len();
@@ -1001,8 +1014,7 @@ pub extern "C" fn rmw_get_subscriber_names_and_types_by_node(
         }
 
         // Populate the arrays
-        let mut index = 0;
-        for (entity_name, type_names) in entity_map.iter() {
+        for (index, (entity_name, type_names)) in entity_map.iter().enumerate() {
             let entity_cstr = match std::ffi::CString::new(entity_name.as_str()) {
                 Ok(s) => s,
                 Err(_) => {
@@ -1055,7 +1067,6 @@ pub extern "C" fn rmw_get_subscriber_names_and_types_by_node(
                 }
             }
 
-            index += 1;
         }
     }
 
@@ -1430,10 +1441,27 @@ pub extern "C" fn rmw_service_server_is_available(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // Simple implementation: if the client exists, assume the server is available
-    // A full implementation would use Zenoh's discovery mechanism
+    let node_impl = match node.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    let client_impl = match client.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Get the client's service name
+    let service_name = match client_impl.service_name.to_str() {
+        Ok(name) => name,
+        Err(_) => return RMW_RET_ERROR as _,
+    };
+
+    // Count servers for this service (namespace is included in service_name)
+    let server_count = node_impl.graph.count(ros_z::entity::EntityKind::Service, service_name);
+
     unsafe {
-        *is_available = true;
+        *is_available = server_count > 0;
     }
 
     RMW_RET_OK as _
@@ -1641,7 +1669,6 @@ pub extern "C" fn rmw_get_client_names_and_types_by_node(
                 }
             }
 
-            index += 1;
         }
     }
 
@@ -1751,7 +1778,6 @@ pub extern "C" fn rmw_get_publisher_names_and_types_by_node(
                 }
             }
 
-            index += 1;
         }
     }
 
@@ -1871,7 +1897,6 @@ pub extern "C" fn rmw_get_service_names_and_types_by_node(
                 }
             }
 
-            index += 1;
         }
     }
 

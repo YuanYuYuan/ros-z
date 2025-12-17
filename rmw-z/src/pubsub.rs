@@ -233,9 +233,23 @@ pub extern "C" fn rmw_publisher_count_matched_subscriptions(
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
-    // Count subscriptions with the same topic using graph discovery
+    // Get all subscription entities for this topic
     let topic_name = publisher_impl.topic.to_str().unwrap_or("");
-    let count = publisher_impl.graph.count(ros_z::entity::EntityKind::Subscription, topic_name);
+    let entities = publisher_impl.graph.get_entities_by_topic(
+        ros_z::entity::EntityKind::Subscription,
+        topic_name
+    );
+
+    // Filter by QoS compatibility
+    let pub_qos = &publisher_impl.qos;
+    let count = entities.iter().filter(|entity| {
+        if let Some(endpoint) = entity.get_endpoint() {
+            let sub_qos = crate::qos::ros_z_qos_to_rmw_qos(&endpoint.qos);
+            crate::qos::qos_profiles_are_compatible(pub_qos, &sub_qos)
+        } else {
+            false
+        }
+    }).count();
 
     unsafe {
         *subscription_count = count;
@@ -448,9 +462,23 @@ pub extern "C" fn rmw_subscription_count_matched_publishers(
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
-    // Count publishers with the same topic using graph discovery
+    // Get all publisher entities for this topic
     let topic_name = subscription_impl.topic.to_str().unwrap_or("");
-    let count = subscription_impl.graph.count(ros_z::entity::EntityKind::Publisher, topic_name);
+    let entities = subscription_impl.graph.get_entities_by_topic(
+        ros_z::entity::EntityKind::Publisher,
+        topic_name
+    );
+
+    // Filter by QoS compatibility
+    let sub_qos = &subscription_impl.qos;
+    let count = entities.iter().filter(|entity| {
+        if let Some(endpoint) = entity.get_endpoint() {
+            let pub_qos = crate::qos::ros_z_qos_to_rmw_qos(&endpoint.qos);
+            crate::qos::qos_profiles_are_compatible(&pub_qos, sub_qos)
+        } else {
+            false
+        }
+    }).count();
 
     unsafe {
         *publisher_count = count;

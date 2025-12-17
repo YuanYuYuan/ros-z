@@ -3,6 +3,14 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::collapsible_if)]
 
+// Macro to get file name as C string pointer for error reporting
+#[macro_export]
+macro_rules! cfile {
+    () => {
+        concat!(file!(), "\0").as_ptr() as *const std::os::raw::c_char
+    };
+}
+
 pub mod common;
 pub mod context;
 pub mod guard_condition;

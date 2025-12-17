@@ -93,6 +93,9 @@ pub extern "C" fn rmw_create_node(
     }
     node_impl.graph_guard_condition = graph_guard_condition;
 
+    // Register the graph guard condition with the graph event manager
+    node_impl.graph.event_manager.register_graph_guard_condition(graph_guard_condition as *mut std::ffi::c_void);
+
     // Get pointers to the owned CStrings in node_impl
     let name_ptr = node_impl.name.as_ptr();
     let namespace_ptr = node_impl.namespace.as_ptr();
@@ -122,6 +125,8 @@ pub extern "C" fn rmw_destroy_node(node: *mut rmw_node_t) -> rmw_ret_t {
     // Destroy the graph guard condition first
     if let Ok(node_impl) = node.borrow_data() {
         if !node_impl.graph_guard_condition.is_null() {
+            // Unregister from graph event manager first
+            node_impl.graph.event_manager.unregister_graph_guard_condition(node_impl.graph_guard_condition as *mut std::ffi::c_void);
             crate::guard_condition::rmw_destroy_guard_condition(node_impl.graph_guard_condition);
         }
     }
@@ -150,8 +155,19 @@ pub extern "C" fn rmw_get_node_names(
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
+    // Check context is valid
+    let context = unsafe { (*node).context };
+    if context.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    // Check context has valid options (defensive against corruption)
+    let options = unsafe { &(*context).options };
+    // options is a reference, so we can't check is_null on it directly
+    // Instead, check if the context structure itself is corrupted
+
     // Get allocator from context
-    let allocator = unsafe { &(*(*node).context).options.allocator };
+    let allocator = &(*options).allocator;
 
     // Query graph for all nodes
     let nodes = node_impl.graph.get_node_names();

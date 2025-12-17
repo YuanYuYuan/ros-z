@@ -40,6 +40,19 @@ impl ContextImpl {
         let counter = Arc::new(ros_z::context::GlobalCounter::default());
         let graph = ros_z::graph::Graph::new(&session, domain_id)
             .map_err(|e| format!("Failed to create graph: {}", e))?;
+
+        // Set up graph guard condition trigger callback
+        {
+            let event_manager = graph.event_manager.clone();
+            let trigger_callback = Box::new(|gc: *mut std::ffi::c_void| {
+                let gc_ptr = gc as *mut rmw_guard_condition_t;
+                if !gc_ptr.is_null() {
+                    let _ = crate::guard_condition::rmw_trigger_guard_condition(gc_ptr);
+                }
+            });
+            event_manager.set_guard_condition_trigger(trigger_callback);
+        }
+
         Ok(Self {
             session: Arc::new(session),
             domain_id,
@@ -234,8 +247,18 @@ pub extern "C" fn rmw_shutdown(context: *mut rmw_context_t) -> rmw_ret_t {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // Shutdown happens implicitly when context is finalized
-    RMW_RET_OK as _
+    if unsafe { (*context).impl_.is_null() } {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    // Mark context as shutdown
+    match context.borrow_impl() {
+        Ok(context_impl) => {
+            *context_impl.is_shutdown.lock().unwrap() = true;
+            RMW_RET_OK as _
+        }
+        Err(_) => RMW_RET_INVALID_ARGUMENT as _,
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -244,7 +267,25 @@ pub extern "C" fn rmw_context_fini(context: *mut rmw_context_t) -> rmw_ret_t {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    if unsafe { (*context).impl_.is_null() } {
+    // First try to borrow the implementation to validate it
+    let context_impl = match context.borrow_impl() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Check if context has been shut down
+    if !*context_impl.is_shutdown.lock().unwrap() {
+        return RMW_RET_INVALID_ARGUMENT as _; // Must call rmw_shutdown before rmw_context_fini
+    }
+
+    // Check if there are still nodes attached to this context
+    if !context_impl.nodes.lock().unwrap().is_empty() {
+        return RMW_RET_INVALID_ARGUMENT as _; // Cannot finalize context with active nodes
+    }
+
+    // Additional validation: check if context has been properly initialized
+    // by verifying the implementation_identifier
+    if unsafe { (*context).implementation_identifier }.is_null() {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 

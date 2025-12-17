@@ -11,7 +11,7 @@ use zenoh::Result;
 /// Client implementation for RMW
 pub struct ClientImpl {
     pub inner: ros_z::service::ZClient<crate::msg::RosService>,
-    pub service_name: String,
+    pub service_name: CString,
     pub options: rmw_client_options_t,
     pub request_ts: crate::type_support::ServiceTypeSupport,
     pub response_ts: crate::type_support::ServiceTypeSupport,
@@ -26,7 +26,7 @@ pub struct ClientImpl {
 
 impl ClientImpl {
     pub fn send_request(&self, request: *const c_void, sequence_id: *mut i64) -> Result<()> {
-        eprintln!("🔵 [ClientImpl::send_request] CALLED for service: {}", self.service_name);
+        eprintln!("🔵 [ClientImpl::send_request] CALLED for service: {}", self.service_name.to_string_lossy());
 
         // Create RosMessage from the raw pointer using request MessageTypeSupport
         let req = crate::msg::RosMessage::new(request, self.request_ts.request);
