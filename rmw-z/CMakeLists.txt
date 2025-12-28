@@ -22,46 +22,43 @@ find_package(rosidl_typesupport_fastrtps_c REQUIRED)
 find_package(rosidl_typesupport_fastrtps_cpp REQUIRED)
 find_package(rmw REQUIRED)
 
-set(GENERATED_LIB_FILE ${CMAKE_CURRENT_BINARY_DIR}/release/librmw_zenoh_rs.so)
+# Determine Cargo profile based on CMAKE_BUILD_TYPE
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(CARGO_BUILD_TYPE "debug")
+  set(CARGO_BUILD_FLAG "")
+else()
+  set(CARGO_BUILD_TYPE "release")
+  set(CARGO_BUILD_FLAG "--release")
+endif()
 
-file(GLOB RUST_SOURCES
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/*.rs"
+set(GENERATED_LIB_FILE ${CMAKE_CURRENT_BINARY_DIR}/${CARGO_BUILD_TYPE}/librmw_zenoh_rs.so)
+
+# Always invoke Cargo - it handles incremental builds and dependency tracking
+# Using a phony custom_target (not custom_command) ensures Cargo runs every build
+# Cargo's internal dependency tracking handles incremental builds efficiently
+add_custom_target(cargo_build_rmw_zenoh_rs ALL
+  COMMAND cargo build ${CARGO_BUILD_FLAG} --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
+          --target-dir ${CMAKE_CURRENT_BINARY_DIR}
+  BYPRODUCTS ${GENERATED_LIB_FILE}
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
+  COMMENT "Building Rust library with ${CARGO_BUILD_TYPE} profile (Cargo handles incremental builds)"
+  VERBATIM
 )
 
-add_library(rmw_zenoh_rs SHARED cpp/dummy_for_build.cpp)
-
-set_source_files_properties(
-  cpp/dummy_for_build.cpp
-  PROPERTIES
-    OBJECT_DEPENDS "${RUST_SOURCES};${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml"
-)
-
-add_custom_command(
-  TARGET rmw_zenoh_rs
-  POST_BUILD
-  COMMAND cargo build --release --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml --target-dir ${CMAKE_CURRENT_BINARY_DIR}
-  COMMENT "Building Rust library"
-)
-
-set_target_properties(rmw_zenoh_rs PROPERTIES
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/release"
-  OUTPUT_NAME "rmw_zenoh_rs"
-)
+# Create a library target that wraps the Cargo-built library
+add_library(rmw_zenoh_rs SHARED IMPORTED GLOBAL)
+set_property(TARGET rmw_zenoh_rs PROPERTY IMPORTED_LOCATION ${GENERATED_LIB_FILE})
+add_dependencies(rmw_zenoh_rs cargo_build_rmw_zenoh_rs)
 
 configure_rmw_library(rmw_zenoh_rs)
-
-ament_export_targets(export_rmw_zenoh_rs)
 
 register_rmw_implementation(
   "c:rosidl_typesupport_c:rosidl_typesupport_fastrtps_c:rosidl_typesupport_introspection_c"
   "cpp:rosidl_typesupport_cpp:rosidl_typesupport_fastrtps_cpp:rosidl_typesupport_introspection_cpp")
 
 install(
-  TARGETS rmw_zenoh_rs
-  EXPORT export_rmw_zenoh_rs
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
+  FILES ${GENERATED_LIB_FILE}
+  DESTINATION lib
 )
 
 install(
