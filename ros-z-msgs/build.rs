@@ -5,6 +5,11 @@ use anyhow::Result;
 fn main() -> Result<()> {
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
 
+    // Declare custom cfg flags for package availability
+    println!("cargo::rustc-check-cfg=cfg(has_action_tutorials_interfaces)");
+    println!("cargo::rustc-check-cfg=cfg(has_example_interfaces)");
+    println!("cargo::rustc-check-cfg=cfg(has_test_msgs)");
+
     // Discover ROS packages
     let ros_packages = discover_ros_packages()?;
 
@@ -50,6 +55,14 @@ fn discover_ros_packages() -> Result<Vec<PathBuf>> {
             "cargo:info=Found {} packages from ROS 2 installation",
             system_packages.len()
         );
+
+        // Emit cfg flags for each found package
+        for package_path in &system_packages {
+            if let Some(package_name) = package_path.file_name().and_then(|n| n.to_str()) {
+                println!("cargo:rustc-cfg=has_{}", package_name);
+            }
+        }
+
         return Ok(system_packages);
     }
 
@@ -57,6 +70,13 @@ fn discover_ros_packages() -> Result<Vec<PathBuf>> {
     if !bundled_packages.is_empty() {
         println!("cargo:info=No system ROS packages found, using bundled roslibrust assets");
         ros_packages = discover_bundled_packages(&bundled_packages)?;
+
+        // Emit cfg flags for each found bundled package
+        for package_path in &ros_packages {
+            if let Some(package_name) = package_path.file_name().and_then(|n| n.to_str()) {
+                println!("cargo:rustc-cfg=has_{}", package_name);
+            }
+        }
     }
 
     // Warn if external packages are requested but not found

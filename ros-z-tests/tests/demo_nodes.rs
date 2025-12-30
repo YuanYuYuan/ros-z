@@ -335,6 +335,7 @@ fn test_ros_z_add_two_ints_server_to_rcl_client() {
 }
 
 #[test]
+#[cfg(all(feature = "external_msgs", has_action_tutorials_interfaces))]
 fn test_rcl_fibonacci_action_server_to_ros_z_client() {
     if !check_ros2_available() {
         panic!("ros2 CLI not available - ensure ROS 2 is installed");
@@ -392,6 +393,7 @@ fn test_rcl_fibonacci_action_server_to_ros_z_client() {
 }
 
 #[test]
+#[cfg(all(feature = "external_msgs", has_action_tutorials_interfaces))]
 fn test_ros_z_fibonacci_action_server_to_rcl_client() {
     if !check_ros2_available() {
         panic!("ros2 CLI not available - ensure ROS 2 is installed");
@@ -443,6 +445,7 @@ fn test_ros_z_fibonacci_action_server_to_rcl_client() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[cfg(all(feature = "external_msgs", has_action_tutorials_interfaces))]
 async fn test_ros_z_fibonacci_action_server_to_ros_z_client() {
     zenoh::init_log_from_env_or("error");
     let router = TestRouter::new();

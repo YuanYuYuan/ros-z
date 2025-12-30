@@ -25,4 +25,5 @@ nix = { version = "0.29", features = [
 [features]
 default = []
 ros-msgs = ["dep:ros-z-msgs"]
-interop-tests = ["ros-msgs", "ros-z-msgs/external_msgs"]
+external_msgs = ["ros-msgs", "ros-z-msgs/external_msgs"]
+interop-tests = ["external_msgs"]

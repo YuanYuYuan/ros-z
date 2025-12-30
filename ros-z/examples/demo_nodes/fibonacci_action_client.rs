@@ -1,4 +1,6 @@
+#[cfg(all(feature = "external_msgs", has_action_tutorials_interfaces))]
 use ros_z::{Builder, Result, context::ZContext};
+#[cfg(all(feature = "external_msgs", has_action_tutorials_interfaces))]
 use ros_z_msgs::action_tutorials_interfaces::{FibonacciGoal, action::Fibonacci};
 
 /// Fibonacci action client node that sends goals to compute Fibonacci sequences
@@ -6,6 +8,7 @@ use ros_z_msgs::action_tutorials_interfaces::{FibonacciGoal, action::Fibonacci};
 /// # Arguments
 /// * `ctx` - The ROS-Z context
 /// * `order` - The order of the Fibonacci sequence to compute
+#[cfg(all(feature = "external_msgs", has_action_tutorials_interfaces))]
 pub async fn run_fibonacci_action_client(ctx: ZContext, order: i32) -> Result<Vec<i32>> {
     // Create a node named "fibonacci_action_client"
     let node = ctx.create_node("fibonacci_action_client").build()?;
@@ -45,7 +48,7 @@ pub async fn run_fibonacci_action_client(ctx: ZContext, order: i32) -> Result<Ve
 }
 
 // Only compile main when building as a binary (not when included as a module)
-#[cfg(not(any(test, doctest)))]
+#[cfg(all(not(any(test, doctest)), feature = "external_msgs", has_action_tutorials_interfaces))]
 fn main() -> Result<()> {
     use clap::Parser;
     use ros_z::context::ZContextBuilder;
@@ -75,7 +78,15 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(any(test, doctest)))]
+// Stub main when action_tutorials_interfaces is not available
+#[cfg(all(not(any(test, doctest)), not(all(feature = "external_msgs", has_action_tutorials_interfaces))))]
+fn main() {
+    eprintln!("Error: This example requires the action_tutorials_interfaces ROS 2 package.");
+    eprintln!("Please install it or ensure your ROS 2 environment is properly set up.");
+    std::process::exit(1);
+}
+
+#[cfg(all(not(any(test, doctest)), feature = "external_msgs", has_action_tutorials_interfaces))]
 #[derive(Debug, clap::Parser)]
 #[command(
     name = "demo_nodes_fibonacci_action_client",
