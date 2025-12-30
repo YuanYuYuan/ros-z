@@ -201,7 +201,7 @@ pub extern "C" fn rmw_create_publisher(
         if let Some(endpoint) = sub_entity.get_endpoint() {
             // Skip if we've already checked this GID (avoids double-counting if same subscription appears multiple times)
             let gid = endpoint.gid();
-            if !checked_gids.insert(gid.clone()) {
+            if !checked_gids.insert(gid) {
                 continue;
             }
 
@@ -301,13 +301,13 @@ pub extern "C" fn rmw_destroy_publisher(
 
     // Then drop the rmw_publisher_t (but without double-dropping the data field)
     // We need to prevent double-free, so we create a new rmw_publisher_t with null data
-    drop(rmw_publisher_t {
+    let _ = rmw_publisher_t {
         implementation_identifier: publisher_box.implementation_identifier,
         data: std::ptr::null_mut(),
         topic_name: publisher_box.topic_name,
         options: publisher_box.options,
         can_loan_messages: publisher_box.can_loan_messages,
-    });
+    };
 
     tracing::debug!("rmw_destroy_publisher: Publisher dropped");
     RMW_RET_OK as _
@@ -465,7 +465,7 @@ pub extern "C" fn rmw_create_subscription(
         if let Some(endpoint) = pub_entity.get_endpoint() {
             // Skip if we've already checked this GID (avoids double-counting if same publisher appears multiple times)
             let gid = endpoint.gid();
-            if !checked_gids.insert(gid.clone()) {
+            if !checked_gids.insert(gid) {
                 continue;
             }
 
@@ -557,14 +557,14 @@ pub extern "C" fn rmw_destroy_subscription(
     }
 
     // Then drop the rmw_subscription_t without double-dropping the data field
-    drop(rmw_subscription_t {
+    let _ = rmw_subscription_t {
         implementation_identifier: subscription_box.implementation_identifier,
         data: std::ptr::null_mut(),
         topic_name: subscription_box.topic_name,
         options: subscription_box.options,
         can_loan_messages: subscription_box.can_loan_messages,
         is_cft_enabled: subscription_box.is_cft_enabled,
-    });
+    };
 
     RMW_RET_OK as _
 }
@@ -828,11 +828,11 @@ pub extern "C" fn rmw_destroy_client(
     }
 
     // Then drop the rmw_client_t without double-dropping the data field
-    drop(rmw_client_t {
+    let _ = rmw_client_t {
         implementation_identifier: client_box.implementation_identifier,
         data: std::ptr::null_mut(),
         service_name: client_box.service_name,
-    });
+    };
 
     // Then remove from graph to clean up the slabs
     if let (Some(entity), Some(graph)) = (entity, graph) {
@@ -968,11 +968,11 @@ pub extern "C" fn rmw_destroy_service(
     }
 
     // Then drop the rmw_service_t without double-dropping the data field
-    drop(rmw_service_t {
+    let _ = rmw_service_t {
         implementation_identifier: service_box.implementation_identifier,
         data: std::ptr::null_mut(),
         service_name: service_box.service_name,
-    });
+    };
 
     // Then remove from graph to clean up the slabs
     if let (Some(entity), Some(graph)) = (entity, graph) {
