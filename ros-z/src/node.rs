@@ -29,6 +29,7 @@ pub struct ZNodeBuilder {
     pub domain_id: usize,
     pub name: String,
     pub namespace: String,
+    pub enclave: String,
     pub session: Arc<Session>,
     pub counter: Arc<GlobalCounter>,
     pub graph: Arc<Graph>,
@@ -37,7 +38,14 @@ pub struct ZNodeBuilder {
 
 impl ZNodeBuilder {
     pub fn with_namespace<S: AsRef<str>>(mut self, namespace: S) -> Self {
-        self.namespace = namespace.as_ref().to_owned();
+        // Normalize namespace: "/" (root namespace) should be treated as "" (empty)
+        // This ensures consistent HashMap lookups across local and remote entities
+        let ns = namespace.as_ref();
+        self.namespace = if ns == "/" {
+            String::new()
+        } else {
+            ns.to_owned()
+        };
         self
     }
 }
@@ -52,6 +60,7 @@ impl Builder for ZNodeBuilder {
             id,
             self.name,
             self.namespace,
+            self.enclave,
         );
         let lv_token = self
             .session

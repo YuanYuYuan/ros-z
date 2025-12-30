@@ -43,7 +43,8 @@ pub struct Notifier {
 
 impl Notifier {
     pub fn notify_all(&self) {
-        std::mem::drop(self.mutex.lock());
+        // No need to lock mutex for notify_all with parking_lot
+        // Calling notify_all() without holding the lock avoids thundering herd issues
         self.cv.notify_all();
     }
 }

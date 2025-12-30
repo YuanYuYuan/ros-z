@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::AcqRel;
 use std::time::Duration;
 use std::{marker::PhantomData, sync::Arc};
+use std::collections::VecDeque;
 
 use zenoh::liveliness::LivelinessToken;
 use zenoh::{Result, Session, Wait, sample::{Locality, Sample}};
@@ -18,6 +19,121 @@ use crate::msg::{CdrSerdes, ZDeserializer, ZMessage, ZSerializer};
 use crate::qos::{QosDurability, QosHistory, QosProfile, QosReliability};
 use std::sync::Mutex;
 
+// KeepLastQueue implementation for ROS KEEP_LAST semantics
+pub struct KeepLastQueue<T> {
+    queue: Mutex<VecDeque<T>>,
+    capacity: usize,
+}
+
+impl<T> KeepLastQueue<T> {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            queue: Mutex::new(VecDeque::with_capacity(capacity)),
+            capacity,
+        }
+    }
+
+    /// Push with ROS KEEP_LAST semantics: drop oldest if full
+    pub fn push(&self, item: T) {
+        let mut q = self.queue.lock().unwrap();
+        if q.len() == self.capacity {
+            q.pop_front();  // Drop oldest
+        }
+        q.push_back(item);
+    }
+
+    pub fn recv(&self) -> std::result::Result<T, RecvError> {
+        let mut q = self.queue.lock().unwrap();
+        q.pop_front().ok_or(RecvError::Empty)
+    }
+
+    pub fn recv_timeout(&self, timeout: Duration) -> std::result::Result<T, RecvTimeoutError> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            {
+                let mut q = self.queue.lock().unwrap();
+                if let Some(item) = q.pop_front() {
+                    return Ok(item);
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(RecvTimeoutError::Timeout);
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    pub async fn recv_async(&self) -> std::result::Result<T, RecvError> {
+        loop {
+            {
+                let mut q = self.queue.lock().unwrap();
+                if let Some(item) = q.pop_front() {
+                    return Ok(item);
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+
+    pub fn try_recv(&self) -> std::result::Result<T, TryRecvError> {
+        let mut q = self.queue.lock().unwrap();
+        q.pop_front().ok_or(TryRecvError::Empty)
+    }
+
+    pub fn len(&self) -> usize {
+        self.queue.lock().unwrap().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.queue.lock().unwrap().is_empty()
+    }
+}
+
+#[derive(Debug)]
+pub enum RecvError {
+    Empty,
+}
+
+impl std::fmt::Display for RecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecvError::Empty => write!(f, "Queue is empty"),
+        }
+    }
+}
+
+impl std::error::Error for RecvError {}
+
+#[derive(Debug)]
+pub enum RecvTimeoutError {
+    Timeout,
+}
+
+impl std::fmt::Display for RecvTimeoutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecvTimeoutError::Timeout => write!(f, "Receive timeout"),
+        }
+    }
+}
+
+impl std::error::Error for RecvTimeoutError {}
+
+#[derive(Debug)]
+pub enum TryRecvError {
+    Empty,
+}
+
+impl std::fmt::Display for TryRecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TryRecvError::Empty => write!(f, "Queue is empty"),
+        }
+    }
+}
+
+impl std::error::Error for TryRecvError {}
+
 pub struct ZPub<T: ZMessage, S: ZSerializer> {
     pub entity: EndpointEntity,
     // TODO: replace this with the sample sn
@@ -29,6 +145,17 @@ pub struct ZPub<T: ZMessage, S: ZSerializer> {
     with_attachment: bool,
     events_mgr: Arc<Mutex<EventsManager>>,
     _phantom_data: PhantomData<(T, S)>,
+}
+
+impl<T: ZMessage, S: ZSerializer> Drop for ZPub<T, S> {
+    fn drop(&mut self) {
+        tracing::debug!(
+            "ZPub::drop: Dropping publisher for topic={}, type={:?}, id={}",
+            self.entity.topic,
+            self.entity.type_info.as_ref().map(|t| &t.name),
+            self.entity.id
+        );
+    }
 }
 
 #[derive(Debug)]
@@ -87,13 +214,17 @@ where
         // Map QoS to Zenoh publisher settings
         let mut pub_builder = self.session.declare_publisher(key_expr);
 
-        // Map reliability: Reliable uses Block, BestEffort uses Drop
+        // Map reliability and congestion control
         match self.entity.qos.reliability {
             QosReliability::Reliable => {
-                pub_builder = pub_builder.congestion_control(zenoh::qos::CongestionControl::Block);
+                pub_builder = pub_builder
+                    .reliability(zenoh::qos::Reliability::Reliable)
+                    .congestion_control(zenoh::qos::CongestionControl::Block);
             }
             QosReliability::BestEffort => {
-                pub_builder = pub_builder.congestion_control(zenoh::qos::CongestionControl::Drop);
+                pub_builder = pub_builder
+                    .reliability(zenoh::qos::Reliability::BestEffort)
+                    .congestion_control(zenoh::qos::CongestionControl::Drop);
             }
         }
 
@@ -101,17 +232,31 @@ where
         let inner = match self.entity.qos.durability {
             QosDurability::TransientLocal => {
                 let depth = match self.entity.qos.history {
-                    QosHistory::KeepLast(d) => d,
+                    QosHistory::KeepLast(d) => d.get(),
                     QosHistory::KeepAll => usize::MAX,
                 };
-                pub_builder
+                let mut builder = pub_builder
                     .advanced()
                     .cache(CacheConfig::default().max_samples(depth))
-                    .publisher_detection()
-                    .wait()?
+                    .publisher_detection();
+
+                // Only enable sample_miss_detection for RELIABLE + TRANSIENT_LOCAL
+                // This matches rmw_zenoh_cpp behavior and uses SequenceNumber sequencing
+                // to avoid requiring timestamping in Zenoh config
+                if self.entity.qos.reliability == QosReliability::Reliable {
+                    builder = builder.sample_miss_detection(
+                        zenoh_ext::MissDetectionConfig::default()
+                            .sporadic_heartbeat(Duration::from_millis(500))
+                    );
+                }
+                builder.wait()?
             }
             QosDurability::Volatile => {
-                pub_builder.express(false).advanced().wait()?
+                // For Volatile: use advanced publisher without cache or publisher_detection
+                // C++ doesn't set publisher_detection for Volatile
+                pub_builder
+                    .advanced()
+                    .wait()?
             }
         };
         let lv_token = self
@@ -143,11 +288,18 @@ where
     }
 
     pub fn publish(&self, msg: &T) -> Result<()> {
-        let mut put_builder = self.inner.put(S::serialize(msg));
+        eprintln!("[ZPub::publish] Serializing message");
+        let serialized = S::serialize(msg);
+        eprintln!("[ZPub::publish] Creating put_builder");
+        let mut put_builder = self.inner.put(serialized);
         if self.with_attachment {
+            eprintln!("[ZPub::publish] Adding attachment");
             put_builder = put_builder.attachment(self.new_attchment());
         }
-        put_builder.wait()
+        eprintln!("[ZPub::publish] Calling wait() - TESTING if it works without tokio");
+        let result = put_builder.wait();
+        eprintln!("[ZPub::publish] wait() completed: {:?}", result.is_ok());
+        result
     }
 
     pub async fn async_publish(&self, msg: &T) -> Result<()> {
@@ -250,9 +402,13 @@ where
 
         let inner = sub_builder
             .callback(move |sample| {
+                dbg!();
                 let payload = sample.payload().to_bytes();
+                dbg!();
                 let msg = S::deserialize(&payload);
+                dbg!();
                 callback(msg);
+                dbg!();
             })
             .wait()?;
 
@@ -292,11 +448,14 @@ where
 
         // Map QoS history to queue size
         let queue_size = match self.entity.qos.history {
-            QosHistory::KeepLast(depth) => depth,
-            QosHistory::KeepAll => 100, // Use a reasonable default for KeepAll
+            QosHistory::KeepLast(depth) => depth.get(),
+            QosHistory::KeepAll => 1000, // Use a reasonable default for KeepAll
         };
 
-        let (tx, rx) = flume::bounded(queue_size);
+        // Create KeepLastQueue instead of flume
+        let queue = Arc::new(KeepLastQueue::new(queue_size));
+        let queue_clone = queue.clone();
+
         let mut sub_builder = self
             .session
             .declare_subscriber(self.entity.topic_key_expr()?);
@@ -308,7 +467,10 @@ where
 
         let inner = sub_builder
             .callback(move |sample| {
-                let _ = tx.send(sample);
+                let len_before = queue_clone.len();
+                queue_clone.push(sample);  // Automatic KEEP_LAST overwrite
+                let len_after = queue_clone.len();
+                eprintln!("[callback] Message received: queue {} -> {} (cap={})", len_before, len_after, queue_size);
                 notify();
             })
             .wait()?;
@@ -322,7 +484,7 @@ where
             entity: self.entity,
             _inner: inner,
             _lv_token: lv_token,
-            queue: Some(rx),
+            queue: Some(queue),
             events_mgr: Arc::new(Mutex::new(EventsManager::new(gid))),
             _phantom_data: Default::default(),
         })
@@ -349,11 +511,14 @@ where
 
         // Map QoS history to queue size
         let queue_size = match self.entity.qos.history {
-            QosHistory::KeepLast(depth) => depth,
-            QosHistory::KeepAll => 100, // Use a reasonable default for KeepAll
+            QosHistory::KeepLast(depth) => depth.get(),
+            QosHistory::KeepAll => 1000, // Use a reasonable default for KeepAll
         };
 
-        let (tx, rx) = flume::bounded(queue_size);
+        // Create KeepLastQueue instead of flume
+        let queue = Arc::new(KeepLastQueue::new(queue_size));
+        let queue_clone = queue.clone();
+
         let mut sub_builder = self
             .session
             .declare_subscriber(self.entity.topic_key_expr()?);
@@ -365,7 +530,10 @@ where
 
         let inner = sub_builder
             .callback(move |sample| {
-                let _ = tx.send(sample);
+                let len_before = queue_clone.len();
+                queue_clone.push(sample);  // ROS KEEP_LAST overwrite
+                let len_after = queue_clone.len();
+                eprintln!("[callback] Message received: queue {} -> {} (cap={})", len_before, len_after, queue_size);
             })
             .wait()?;
         let gid = self.entity.gid();
@@ -378,7 +546,7 @@ where
             entity: self.entity,
             _inner: inner,
             _lv_token: lv_token,
-            queue: Some(rx),
+            queue: Some(queue),
             events_mgr: Arc::new(Mutex::new(EventsManager::new(gid))),
             _phantom_data: Default::default(),
         })
@@ -387,7 +555,7 @@ where
 
 pub struct ZSub<T: ZMessage, Q, S: ZDeserializer> {
     pub entity: EndpointEntity,
-    pub queue: Option<flume::Receiver<Q>>,
+    pub queue: Option<Arc<KeepLastQueue<Q>>>,
     _inner: zenoh::pubsub::Subscriber<()>,
     _lv_token: LivelinessToken,
     events_mgr: Arc<Mutex<EventsManager>>,
@@ -403,7 +571,8 @@ where
     pub fn recv_serialized(&self) -> Result<Sample> {
         let queue = self.queue.as_ref()
             .ok_or_else(|| zenoh::Error::from("Subscriber was built with callback, no queue available"))?;
-        let msg = queue.recv()?;
+        let msg = queue.recv()
+            .map_err(|e| zenoh::Error::from(format!("Queue recv error: {}", e)))?;
         Ok(msg)
     }
 
@@ -411,7 +580,8 @@ where
     pub async fn async_recv_serialized(&self) -> Result<Sample> {
         let queue = self.queue.as_ref()
             .ok_or_else(|| zenoh::Error::from("Subscriber was built with callback, no queue available"))?;
-        let msg = queue.recv_async().await?;
+        let msg = queue.recv_async().await
+            .map_err(|e| zenoh::Error::from(format!("Queue recv error: {}", e)))?;
         Ok(msg)
     }
 
@@ -429,7 +599,8 @@ where
     pub fn recv(&self) -> Result<S::Output> {
         let queue = self.queue.as_ref()
             .ok_or_else(|| zenoh::Error::from("Subscriber was built with callback, no queue available"))?;
-        let sample = queue.recv()?;
+        let sample = queue.recv()
+            .map_err(|e| zenoh::Error::from(format!("Queue recv error: {}", e)))?;
         let payload = sample.payload().to_bytes();
         Ok(S::deserialize(&payload))
     }
@@ -437,7 +608,8 @@ where
     pub fn recv_timeout(&self, timeout: Duration) -> Result<S::Output> {
         let queue = self.queue.as_ref()
             .ok_or_else(|| zenoh::Error::from("Subscriber was built with callback, no queue available"))?;
-        let sample = queue.recv_timeout(timeout)?;
+        let sample = queue.recv_timeout(timeout)
+            .map_err(|e| zenoh::Error::from(format!("Queue recv timeout error: {}", e)))?;
         let payload = sample.payload().to_bytes();
         Ok(S::deserialize(&payload))
     }
@@ -446,7 +618,8 @@ where
     pub async fn async_recv(&self) -> Result<S::Output> {
         let queue = self.queue.as_ref()
             .ok_or_else(|| zenoh::Error::from("Subscriber was built with callback, no queue available"))?;
-        let sample = queue.recv_async().await?;
+        let sample = queue.recv_async().await
+            .map_err(|e| zenoh::Error::from(format!("Queue recv error: {}", e)))?;
         let payload = sample.payload().to_bytes();
         Ok(S::deserialize(&payload))
     }

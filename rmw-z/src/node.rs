@@ -1,17 +1,12 @@
 use std::ffi::CString;
-use std::sync::Arc;
 
 use crate::ros::*;
-use zenoh::Session;
 use crate::rmw_impl_has_data_ptr;
 use ros_z::Builder;
 use crate::traits::*;
 
 /// Node implementation for RMW
 pub struct NodeImpl {
-    pub session: Arc<Session>,
-    pub counter: Arc<ros_z::context::GlobalCounter>,
-    pub graph: Arc<ros_z::graph::Graph>,
     pub inner: ros_z::node::ZNode,
     pub name: CString,
     pub namespace: CString,
@@ -20,7 +15,7 @@ pub struct NodeImpl {
 }
 
 impl NodeImpl {
-    pub fn new(session: Arc<Session>, counter: Arc<ros_z::context::GlobalCounter>, graph: Arc<ros_z::graph::Graph>, name: &str, namespace: &str) -> Result<Self, String> {
+    pub fn new(zcontext: &ros_z::context::ZContext, name: &str, namespace: &str) -> Result<Self, String> {
         let name_cstr = CString::new(name)
             .map_err(|e| format!("Invalid name string: {}", e))?;
         let namespace_cstr = CString::new(namespace)
@@ -33,20 +28,13 @@ impl NodeImpl {
         let fq_name_cstr = CString::new(fq_name)
             .map_err(|e| format!("Invalid fully qualified name: {}", e))?;
 
-        let inner = ros_z::node::ZNodeBuilder {
-            domain_id: 0, // TODO: use actual domain_id
-            name: name.to_string(),
-            namespace: namespace.to_string(),
-            session: session.clone(),
-            counter: counter.clone(),
-            graph: graph.clone(),
-            remap_rules: Default::default(),
-        }.build().map_err(|e| format!("Failed to build node: {}", e))?;
+        // Use ZContext's create_node method
+        let inner = zcontext.create_node(name)
+            .with_namespace(namespace)
+            .build()
+            .map_err(|e| format!("Failed to build node: {}", e))?;
 
         Ok(Self {
-            session,
-            counter,
-            graph,
             inner,
             name: name_cstr,
             namespace: namespace_cstr,
@@ -94,7 +82,12 @@ pub extern "C" fn rmw_create_node(
     node_impl.graph_guard_condition = graph_guard_condition;
 
     // Register the graph guard condition with the graph event manager
-    node_impl.graph.event_manager.register_graph_guard_condition(graph_guard_condition as *mut std::ffi::c_void);
+    node_impl.inner.graph.event_manager.register_graph_guard_condition(graph_guard_condition as *mut std::ffi::c_void);
+
+    // Add node to local graph for immediate discovery
+    if let Err(e) = node_impl.inner.graph.add_local_entity(ros_z::entity::Entity::Node(node_impl.inner.entity.clone())) {
+        tracing::warn!("Failed to add node to local graph: {}", e);
+    }
 
     // Get pointers to the owned CStrings in node_impl
     let name_ptr = node_impl.name.as_ptr();
@@ -122,11 +115,16 @@ pub extern "C" fn rmw_destroy_node(node: *mut rmw_node_t) -> rmw_ret_t {
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // Destroy the graph guard condition first
+    // Remove node from local graph and destroy the graph guard condition
     if let Ok(node_impl) = node.borrow_data() {
+        // Remove node from local graph
+        if let Err(e) = node_impl.inner.graph.remove_local_entity(&ros_z::entity::Entity::Node(node_impl.inner.entity.clone())) {
+            tracing::warn!("Failed to remove node from local graph: {}", e);
+        }
+
         if !node_impl.graph_guard_condition.is_null() {
-            // Unregister from graph event manager first
-            node_impl.graph.event_manager.unregister_graph_guard_condition(node_impl.graph_guard_condition as *mut std::ffi::c_void);
+            // Unregister from graph event manager
+            node_impl.inner.graph.event_manager.unregister_graph_guard_condition(node_impl.graph_guard_condition as *mut std::ffi::c_void);
             crate::guard_condition::rmw_destroy_guard_condition(node_impl.graph_guard_condition);
         }
     }
@@ -161,26 +159,21 @@ pub extern "C" fn rmw_get_node_names(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // Check context has valid options (defensive against corruption)
-    let options = unsafe { &(*context).options };
-    // options is a reference, so we can't check is_null on it directly
-    // Instead, check if the context structure itself is corrupted
-
-    // Get allocator from context
-    let allocator = &(*options).allocator;
+    // Get allocator - use default allocator since RCL doesn't pass one
+    let allocator = unsafe { rcutils_get_default_allocator() };
 
     // Query graph for all nodes
-    let nodes = node_impl.graph.get_node_names();
+    let nodes = node_impl.inner.graph.get_node_names();
     let node_count = nodes.len();
 
     // Initialize string arrays
     unsafe {
-        let ret = rcutils_string_array_init(node_names, node_count, allocator as *const _);
+        let ret = rcutils_string_array_init(node_names, node_count, &allocator as *const _);
         if ret != 0 {
             return RMW_RET_BAD_ALLOC as _;
         }
 
-        let ret = rcutils_string_array_init(node_namespaces, node_count, allocator as *const _);
+        let ret = rcutils_string_array_init(node_namespaces, node_count, &allocator as *const _);
         if ret != 0 {
             // Clean up node_names on error
             rcutils_string_array_fini(node_names);
@@ -207,7 +200,7 @@ pub extern "C" fn rmw_get_node_names(
             };
 
             (*node_names).data.add(i).write(
-                rcutils_strdup(name_cstr.as_ptr(), *allocator)
+                rcutils_strdup(name_cstr.as_ptr(), allocator)
             );
             if (*node_names).data.add(i).read().is_null() {
                 rcutils_string_array_fini(node_names);
@@ -216,7 +209,7 @@ pub extern "C" fn rmw_get_node_names(
             }
 
             (*node_namespaces).data.add(i).write(
-                rcutils_strdup(ns_cstr.as_ptr(), *allocator)
+                rcutils_strdup(ns_cstr.as_ptr(), allocator)
             );
             if (*node_namespaces).data.add(i).read().is_null() {
                 rcutils_string_array_fini(node_names);
@@ -240,6 +233,107 @@ pub extern "C" fn rmw_get_node_names_with_enclaves(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // Delegate to rmw_get_node_names for now
-    rmw_get_node_names(node, node_names, node_namespaces)
+    let node_impl = match node.borrow_data() {
+        Ok(impl_) => impl_,
+        Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
+    };
+
+    // Check context is valid
+    let context = unsafe { (*node).context };
+    if context.is_null() {
+        return RMW_RET_INVALID_ARGUMENT as _;
+    }
+
+    // Get allocator - use default allocator since RCL doesn't pass one
+    let allocator = unsafe { rcutils_get_default_allocator() };
+
+    // Query graph for all nodes with enclaves
+    let nodes = node_impl.inner.graph.get_node_names_with_enclaves();
+    let node_count = nodes.len();
+
+    // Initialize string arrays
+    unsafe {
+        let ret = rcutils_string_array_init(node_names, node_count, &allocator as *const _);
+        if ret != 0 {
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        let ret = rcutils_string_array_init(node_namespaces, node_count, &allocator as *const _);
+        if ret != 0 {
+            // Clean up node_names on error
+            rcutils_string_array_fini(node_names);
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        let ret = rcutils_string_array_init(enclaves, node_count, &allocator as *const _);
+        if ret != 0 {
+            // Clean up on error
+            rcutils_string_array_fini(node_names);
+            rcutils_string_array_fini(node_namespaces);
+            return RMW_RET_BAD_ALLOC as _;
+        }
+
+        // Populate the arrays
+        for (i, (name, namespace, enclave)) in nodes.iter().enumerate() {
+            let name_cstr = match std::ffi::CString::new(name.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rcutils_string_array_fini(node_names);
+                    rcutils_string_array_fini(node_namespaces);
+                    rcutils_string_array_fini(enclaves);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+            let ns_cstr = match std::ffi::CString::new(namespace.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rcutils_string_array_fini(node_names);
+                    rcutils_string_array_fini(node_namespaces);
+                    rcutils_string_array_fini(enclaves);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+            let enclave_cstr = match std::ffi::CString::new(enclave.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    rcutils_string_array_fini(node_names);
+                    rcutils_string_array_fini(node_namespaces);
+                    rcutils_string_array_fini(enclaves);
+                    return RMW_RET_ERROR as _;
+                }
+            };
+
+            (*node_names).data.add(i).write(
+                rcutils_strdup(name_cstr.as_ptr(), allocator)
+            );
+            if (*node_names).data.add(i).read().is_null() {
+                rcutils_string_array_fini(node_names);
+                rcutils_string_array_fini(node_namespaces);
+                rcutils_string_array_fini(enclaves);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            (*node_namespaces).data.add(i).write(
+                rcutils_strdup(ns_cstr.as_ptr(), allocator)
+            );
+            if (*node_namespaces).data.add(i).read().is_null() {
+                rcutils_string_array_fini(node_names);
+                rcutils_string_array_fini(node_namespaces);
+                rcutils_string_array_fini(enclaves);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+
+            (*enclaves).data.add(i).write(
+                rcutils_strdup(enclave_cstr.as_ptr(), allocator)
+            );
+            if (*enclaves).data.add(i).read().is_null() {
+                rcutils_string_array_fini(node_names);
+                rcutils_string_array_fini(node_namespaces);
+                rcutils_string_array_fini(enclaves);
+                return RMW_RET_BAD_ALLOC as _;
+            }
+        }
+    }
+
+    RMW_RET_OK as _
 }

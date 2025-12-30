@@ -26,16 +26,12 @@ pub struct ClientImpl {
 
 impl ClientImpl {
     pub fn send_request(&self, request: *const c_void, sequence_id: *mut i64) -> Result<()> {
-        eprintln!("🔵 [ClientImpl::send_request] CALLED for service: {}", self.service_name.to_string_lossy());
-
         // Create RosMessage from the raw pointer using request MessageTypeSupport
         let req = crate::msg::RosMessage::new(request, self.request_ts.request);
 
         // Get the sequence number before sending (fetch_add returns old value before incrementing)
         // This mirrors ZClient's internal sequence counter behavior
         let sn = self.sequence_counter.fetch_add(1, Ordering::AcqRel);
-
-        eprintln!("🔵 [ClientImpl::send_request] Sending request with sequence number: {}", sn);
 
         // Send the request using rmw_send_request (synchronous version)
         // We don't need a notify callback for RMW

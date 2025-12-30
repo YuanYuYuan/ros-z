@@ -8,6 +8,10 @@ unsafe impl ExternType for crate::ros::rosidl_service_type_support_t {
     type Id = type_id!("rosidl_service_type_support_t");
     type Kind = cxx::kind::Opaque;
 }
+unsafe impl ExternType for crate::ros::rosidl_type_hash_t {
+    type Id = type_id!("rosidl_type_hash_t");
+    type Kind = cxx::kind::Trivial;
+}
 
 #[cxx::bridge]
 mod ffi {
@@ -18,6 +22,7 @@ mod ffi {
         type c_void = crate::c_void;
         type rosidl_message_type_support_t = crate::ros::rosidl_message_type_support_t;
         type rosidl_service_type_support_t = crate::ros::rosidl_service_type_support_t;
+        type rosidl_type_hash_t = crate::ros::rosidl_type_hash_t;
 
         #[namespace = "serde_bridge"]
         unsafe fn get_message_typesupport(
@@ -64,6 +69,11 @@ mod ffi {
         unsafe fn get_response_type_support(
             ts: *const rosidl_service_type_support_t,
         ) -> *const rosidl_message_type_support_t;
+
+        #[namespace = "serde_bridge"]
+        unsafe fn get_service_type_hash(
+            ts: *const rosidl_service_type_support_t,
+        ) -> *const rosidl_type_hash_t;
     }
 }
 
@@ -164,8 +174,28 @@ impl MessageTypeSupport {
         format!("{ns}dds_::{name}_")
     }
 
+    /// Get the ROS type name in the format "namespace/msg/Name" (without DDS mangling)
+    pub fn get_ros_type_name(&self) -> String {
+        let (name, namespace) = unsafe {
+            let ts = self.as_ref();
+            (get_message_name(ts), get_message_namespace(ts))
+        };
+
+        // Remove trailing underscore from name (DDS mangling)
+        let clean_name = name.strip_suffix('_').unwrap_or(&name);
+
+        // Format as ROS type name: replace :: with / in namespace
+        if namespace.is_empty() {
+            clean_name.to_string()
+        } else {
+            // Replace C++ namespace separators (::) with ROS separators (/)
+            let ros_namespace = namespace.replace("::", "/");
+            format!("{}/{}", ros_namespace, clean_name)
+        }
+    }
+
     pub fn get_type_info(&self) -> TypeInfo {
-        TypeInfo::new(&self.get_type_prefix(), self.get_type_hash())
+        TypeInfo::new(&self.get_ros_type_name(), self.get_type_hash())
     }
 }
 
@@ -212,16 +242,22 @@ impl ServiceTypeSupport {
     }
 
     pub fn get_type_hash(&self) -> TypeHash {
-        // TODO: Service type support doesn't have get_type_hash_func in current implementation
-        // Use the response type's hash as a workaround
-        self.response.get_type_hash()
+        let hash = unsafe {
+            let type_hash = get_service_type_hash(self.ptr);
+            if type_hash.is_null() {
+                // Fallback to response type's hash if service hash is not available
+                return self.response.get_type_hash();
+            }
+            *type_hash
+        };
+        TypeHash::new(hash.version, hash.value)
     }
 
     pub fn get_type_info(&self) -> TypeInfo {
-        let name_with_suffix = self.response.get_type_prefix();
+        let name_with_suffix = self.response.get_ros_type_name();
         let name = name_with_suffix
-            .strip_suffix("Response_")
-            .expect("Invalid Response_ type");
+            .strip_suffix("_Response")
+            .expect("Invalid Response type - must end with _Response");
         TypeInfo::new(name, self.get_type_hash())
     }
 }

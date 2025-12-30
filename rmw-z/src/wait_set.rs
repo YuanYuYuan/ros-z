@@ -1,5 +1,6 @@
-use crate::traits::{Waitable, OwnData};
+use crate::traits::{Waitable, OwnData, BorrowImpl};
 use crate::ros::*;
+use std::sync::Arc;
 
 /// Wait set implementation for RMW
 pub struct WaitSetImpl {
@@ -8,58 +9,74 @@ pub struct WaitSetImpl {
     pub services: Vec<*mut rmw_service_impl_t>,
     pub clients: Vec<*mut rmw_client_impl_t>,
     pub events: Vec<*mut rmw_event_t>,
+    pub notifier: Arc<crate::utils::Notifier>,
 }
 
 impl WaitSetImpl {
-    pub fn new(max_conditions: usize) -> Self {
+    pub fn new(max_conditions: usize, notifier: Arc<crate::utils::Notifier>) -> Self {
         Self {
             subscriptions: Vec::with_capacity(max_conditions),
             guard_conditions: Vec::with_capacity(max_conditions),
             services: Vec::with_capacity(max_conditions),
             clients: Vec::with_capacity(max_conditions),
             events: Vec::with_capacity(max_conditions),
+            notifier,
         }
     }
 
     pub fn wait(&self, timeout: &rmw_time_t) -> bool {
-        use std::time::{Duration, Instant};
+        use std::time::Duration;
+
+        // If timeout is zero, check ready immediately and return
+        if timeout.sec == 0 && timeout.nsec == 0 {
+            return self.check_ready();
+        }
 
         // Calculate timeout duration
         let timeout_duration = if timeout.sec == u64::MAX {
-            Duration::from_secs(365 * 24 * 3600) // Essentially infinite
+            None // Infinite wait
         } else {
-            Duration::from_secs(timeout.sec) + Duration::from_nanos(timeout.nsec)
+            Some(Duration::from_secs(timeout.sec) + Duration::from_nanos(timeout.nsec))
         };
 
-        let start = Instant::now();
+        // Use the notifier's condition variable for efficient waiting
+        let mut mutex_guard = self.notifier.mutex.lock();
 
-        // First check if anything is already ready
-        if self.check_ready() {
-            return true;
-        }
+        // Always wait (at least try to) - this prevents busy loops when data is already present
+        // We'll check ready status after waiting or timing out
+        loop {
+            if let Some(dur) = timeout_duration {
+                let wait_result = self.notifier.cv.wait_for(&mut mutex_guard, dur);
 
-        // If timeout is zero, return immediately
-        if timeout.sec == 0 && timeout.nsec == 0 {
-            return false;
-        }
+                // After wait (notification or timeout), check if anything is ready
+                let is_ready = self.check_ready();
 
-        // Wait for notifications or timeout
-        // For now, use a more responsive polling approach
-        let poll_interval = Duration::from_millis(1);
+                if is_ready {
+                    return true;
+                }
 
-        while start.elapsed() < timeout_duration {
-            if self.check_ready() {
-                return true;
+                // Nothing ready
+                if wait_result.timed_out() {
+                    return false;
+                }
+
+                // Spurious wakeup - nothing ready yet, loop and wait again
+            } else {
+                // Infinite wait
+                self.notifier.cv.wait(&mut mutex_guard);
+
+                // Check if anything is ready after waking
+                if self.check_ready() {
+                    return true;
+                }
+                // If notified but nothing ready yet, loop and wait again
             }
-            std::thread::sleep(poll_interval);
         }
-
-        false
     }
 
     fn check_ready(&self) -> bool {
         // Check subscriptions
-        for sub_impl_ptr in self.subscriptions.iter() {
+        for sub_impl_ptr in &self.subscriptions {
             if sub_impl_ptr.is_null() {
                 continue;
             }
@@ -110,6 +127,22 @@ impl WaitSetImpl {
             }
         }
 
+        // Check events
+        for event_ptr in &self.events {
+            if event_ptr.is_null() {
+                continue;
+            }
+            unsafe {
+                let event = &*(*event_ptr);
+                if !event.data.is_null() {
+                    let event_handle = &*(event.data as *const ros_z::event::RmEventHandle);
+                    if event_handle.is_ready() {
+                        return true;
+                    }
+                }
+            }
+        }
+
         false
     }
 }
@@ -126,7 +159,14 @@ pub extern "C" fn rmw_create_wait_set(
         return std::ptr::null_mut();
     }
 
-    let wait_set_impl = WaitSetImpl::new(max_conditions);
+    // Get the shared notifier from the context
+    let context_impl = match context.borrow_impl() {
+        Ok(impl_) => impl_,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let notifier = context_impl.share_notifier();
+
+    let wait_set_impl = WaitSetImpl::new(max_conditions, notifier);
     let wait_set = Box::new(rmw_wait_set_t {
         implementation_identifier: crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _,
         guard_conditions: std::ptr::null_mut(),
@@ -157,7 +197,7 @@ pub extern "C" fn rmw_wait(
     guard_conditions: *mut rmw_guard_conditions_t,
     services: *mut rmw_services_t,
     clients: *mut rmw_clients_t,
-    _events: *mut rmw_events_t,
+    events: *mut rmw_events_t,
     wait_set: *mut rmw_wait_set_t,
     wait_timeout: *const rmw_time_t,
 ) -> rmw_ret_t {
@@ -219,6 +259,17 @@ pub extern "C" fn rmw_wait(
             let cli_impl = unsafe { *cli_array.clients.add(i) as *mut rmw_client_impl_t };
             if !cli_impl.is_null() {
                 wait_set_impl.clients.push(cli_impl);
+            }
+        }
+    }
+
+    // Add events
+    if !events.is_null() {
+        let event_array = unsafe { &*events };
+        for i in 0..event_array.event_count {
+            let event_ptr = unsafe { *event_array.events.add(i) as *mut rmw_event_t };
+            if !event_ptr.is_null() {
+                wait_set_impl.events.push(event_ptr);
             }
         }
     }
@@ -311,10 +362,13 @@ pub extern "C" fn rmw_wait(
                 let gc_impl_ptr = unsafe { *gc_array.guard_conditions.add(i) as *mut rmw_guard_condition_impl_t };
                 if !gc_impl_ptr.is_null() {
                     unsafe {
-                        let gc_impl = &*(gc_impl_ptr as *const _ as *const crate::guard_condition::GuardConditionImpl);
+                        let gc_impl = &mut *(gc_impl_ptr as *mut crate::guard_condition::GuardConditionImpl);
                         if gc_impl.is_ready() {
                             *gc_array.guard_conditions.add(ready_count) = gc_impl_ptr as *mut _;
                             ready_count += 1;
+                            // Reset the guard condition after it's been detected as ready
+                            // This prevents it from staying triggered forever
+                            gc_impl.reset();
                         }
                     }
                 }
@@ -322,6 +376,34 @@ pub extern "C" fn rmw_wait(
             for i in ready_count..gc_array.guard_condition_count {
                 unsafe {
                     *gc_array.guard_conditions.add(i) = std::ptr::null_mut();
+                }
+            }
+        }
+
+        // Similar for events
+        if !events.is_null() {
+            let event_array = unsafe { &mut *events };
+            let mut ready_count = 0;
+            for i in 0..event_array.event_count {
+                let event_ptr = unsafe { *event_array.events.add(i) as *mut rmw_event_t };
+                if !event_ptr.is_null() {
+                    unsafe {
+                        let event = &*event_ptr;
+                        // Check if event data is ready
+                        if !event.data.is_null() {
+                            let event_handle = &*(event.data as *const ros_z::event::RmEventHandle);
+                            if event_handle.is_ready() {
+                                *event_array.events.add(ready_count) = event_ptr as *mut _;
+                                ready_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            // Null out the rest
+            for i in ready_count..event_array.event_count {
+                unsafe {
+                    *event_array.events.add(i) = std::ptr::null_mut();
                 }
             }
         }

@@ -1,4 +1,5 @@
 use std::time::Duration;
+use std::num::NonZeroUsize;
 
 use ros_z::{
     Builder, Result,
@@ -28,7 +29,7 @@ pub async fn run_listener(
 
     // Create a subscription to the "chatter" topic
     let qos = QosProfile {
-        history: QosHistory::KeepLast(10),
+        history: QosHistory::KeepLast(NonZeroUsize::new(10).unwrap()),
         ..Default::default()
     };
     let subscriber = node.create_sub::<RosString>(topic).with_qos(qos).build()?;

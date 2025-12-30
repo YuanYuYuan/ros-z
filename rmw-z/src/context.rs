@@ -3,19 +3,65 @@ use std::collections::HashMap;
 
 
 use crate::ros::*;
-use zenoh::{Session, Wait};
 use crate::rmw_impl_has_impl_ptr;
 use crate::node::NodeImpl;
 use crate::traits::*;
 use crate::utils::Notifier;
+use ros_z::Builder;
+
+#[repr(C)]
+pub struct rmw_error_string_t {
+    pub str: [std::os::raw::c_char; 1024],
+}
+
+static mut RMW_ERROR_BUFFER: [std::os::raw::c_char; 1024] = [0; 1024];
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_set_error_string(error_string: *const std::os::raw::c_char) {
+    unsafe {
+        if !error_string.is_null() {
+            let mut i = 0;
+            while i < 1023 {
+                let c = *error_string.add(i);
+                RMW_ERROR_BUFFER[i] = c;
+                if c == 0 {
+                    break;
+                }
+                i += 1;
+            }
+            RMW_ERROR_BUFFER[i] = 0;
+        } else {
+            RMW_ERROR_BUFFER[0] = 0;
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_get_error_string() -> rmw_error_string_t {
+    unsafe {
+        if RMW_ERROR_BUFFER[0] == 0 {
+            let default_error = b"Mock error\0";
+            for i in 0..default_error.len() {
+                RMW_ERROR_BUFFER[i] = default_error[i] as std::os::raw::c_char;
+            }
+        }
+        rmw_error_string_t {
+            str: RMW_ERROR_BUFFER,
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rmw_reset_error() {
+    unsafe {
+        RMW_ERROR_BUFFER[0] = 0;
+    }
+}
 
 /// Context implementation for RMW
 pub struct ContextImpl {
-    pub session: Arc<Session>,
-    pub domain_id: usize,
+    pub zcontext: Arc<ros_z::context::ZContext>,
     pub enclave: String,
-    pub counter: Arc<ros_z::context::GlobalCounter>,
-    pub graph: Arc<ros_z::graph::Graph>,
     pub next_entity_id: Arc<Mutex<usize>>,
     pub is_shutdown: Arc<Mutex<bool>>,
     pub nodes: Arc<Mutex<HashMap<*const rmw_node_t, Arc<NodeImpl>>>>,
@@ -24,41 +70,23 @@ pub struct ContextImpl {
 
 impl ContextImpl {
     pub fn new(domain_id: usize, enclave: String) -> Result<Self, String> {
-        // Create Zenoh config with timestamping enabled
-        let mut config = zenoh::Config::default();
+        // Create ZContext using the builder
+        let zcontext = ros_z::context::ZContextBuilder::default()
+            .with_domain_id(domain_id)
+            .with_enclave(enclave.clone())
+            .build()
+            .map_err(|e| format!("Failed to create ZContext: {}", e))?;
 
-        // Enable timestamping for AdvancedPublisher support
-        config.insert_json5("timestamping/enabled", "true")
-            .map_err(|e| format!("Failed to enable timestamping in config: {}", e))?;
-
-        // Disable multicast scouting to avoid conflicts
-        config.insert_json5("scouting/multicast/enabled", "false")
-            .map_err(|e| format!("Failed to configure scouting: {}", e))?;
-
-        let session = zenoh::open(config).wait()
-            .map_err(|e| format!("Failed to create Zenoh session: {}", e))?;
-        let counter = Arc::new(ros_z::context::GlobalCounter::default());
-        let graph = ros_z::graph::Graph::new(&session, domain_id)
-            .map_err(|e| format!("Failed to create graph: {}", e))?;
-
-        // Set up graph guard condition trigger callback
-        {
-            let event_manager = graph.event_manager.clone();
-            let trigger_callback = Box::new(|gc: *mut std::ffi::c_void| {
-                let gc_ptr = gc as *mut rmw_guard_condition_t;
-                if !gc_ptr.is_null() {
-                    let _ = crate::guard_condition::rmw_trigger_guard_condition(gc_ptr);
-                }
-            });
-            event_manager.set_guard_condition_trigger(trigger_callback);
-        }
+        // Set up the guard condition trigger function for graph events
+        // This allows graph changes to trigger RMW guard conditions
+        let trigger_fn: ros_z::event::GraphGuardConditionTrigger = Box::new(|gc_ptr| {
+            crate::guard_condition::rmw_trigger_guard_condition(gc_ptr as *const crate::ros::rmw_guard_condition_t);
+        });
+        zcontext.graph().event_manager.set_guard_condition_trigger(trigger_fn);
 
         Ok(Self {
-            session: Arc::new(session),
-            domain_id,
+            zcontext: Arc::new(zcontext),
             enclave,
-            counter,
-            graph: Arc::new(graph),
             next_entity_id: Arc::new(Mutex::new(1)),
             is_shutdown: Arc::new(Mutex::new(false)),
             #[allow(clippy::arc_with_non_send_sync)]
@@ -80,9 +108,7 @@ impl ContextImpl {
             .map_err(|e| format!("Invalid namespace string: {}", e))?;
 
         let node_impl = NodeImpl::new(
-            self.session.clone(),
-            self.counter.clone(),
-            self.graph.clone(),
+            &self.zcontext,
             name_str,
             namespace_str,
         ).map_err(|e| format!("Failed to create node: {}", e))?;
@@ -101,15 +127,32 @@ rmw_impl_has_impl_ptr!(rmw_context_t, rmw_context_impl_t, ContextImpl);
 #[unsafe(no_mangle)]
 pub extern "C" fn rmw_init_options_init(
     init_options: *mut rmw_init_options_t,
-    _domain_id: usize,
-    _allocator: rcl_allocator_t,
+    allocator: rcl_allocator_t,
 ) -> rmw_ret_t {
     if init_options.is_null() {
+        rmw_set_error_string(c"Invalid argument".as_ptr());
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
-    // Initialize options structure
-    // For now, just mark as initialized
+    unsafe {
+        // Set the fields
+        (*init_options).domain_id = usize::MAX; // RCL_DEFAULT_DOMAIN_ID
+        (*init_options).allocator = allocator;
+        (*init_options).implementation_identifier = c"rmw_zenoh_rs".as_ptr();
+
+        // Initialize discovery options (required by rolling)
+        (*init_options).discovery_options = crate::ros::rmw_get_zero_initialized_discovery_options();
+        let allocator_ptr = &allocator as *const _ as *mut _;
+        let ret = crate::ros::rmw_discovery_options_init(
+            &mut (*init_options).discovery_options,
+            0,
+            allocator_ptr,
+        );
+        if ret != (RMW_RET_OK as rmw_ret_t) {
+            return ret;
+        }
+    }
+
     RMW_RET_OK as _
 }
 
@@ -119,12 +162,20 @@ pub extern "C" fn rmw_init_options_copy(
     dst: *mut rmw_init_options_t,
 ) -> rmw_ret_t {
     if src.is_null() || dst.is_null() {
+        rmw_set_error_string(c"Invalid argument".as_ptr());
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
     unsafe {
         // Check if dst is already initialized
         if !(*dst).impl_.is_null() {
+            rmw_set_error_string(c"dst already initialized".as_ptr());
+            return RMW_RET_INVALID_ARGUMENT as _;
+        }
+
+        // Check if allocator is valid
+        if (*src).allocator.allocate.is_none() {
+            rmw_set_error_string(c"Invalid allocator".as_ptr());
             return RMW_RET_INVALID_ARGUMENT as _;
         }
 
@@ -132,10 +183,31 @@ pub extern "C" fn rmw_init_options_copy(
         (*dst).instance_id = (*src).instance_id;
         (*dst).implementation_identifier = (*src).implementation_identifier;
         (*dst).domain_id = (*src).domain_id;
-        (*dst).security_options = (*src).security_options;
-        (*dst).localhost_only = (*src).localhost_only;
-        (*dst).discovery_options = (*src).discovery_options;
         (*dst).allocator = (*src).allocator;
+
+        // Copy security options properly (required for deep copy of pointers)
+        (*dst).security_options = crate::ros::rmw_get_zero_initialized_security_options();
+        let allocator_ptr = &(*src).allocator as *const _ as *mut _;
+        let ret = crate::ros::rmw_security_options_copy(
+            &(*src).security_options,
+            allocator_ptr,
+            &mut (*dst).security_options,
+        );
+        if ret != (RMW_RET_OK as rmw_ret_t) {
+            return ret;
+        }
+
+        // Copy discovery options (required by rolling)
+        (*dst).discovery_options = crate::ros::rmw_get_zero_initialized_discovery_options();
+        let allocator_ptr = &(*src).allocator as *const _ as *mut _;
+        let ret = crate::ros::rmw_discovery_options_copy(
+            &(*src).discovery_options,
+            allocator_ptr,
+            &mut (*dst).discovery_options,
+        );
+        if ret != (RMW_RET_OK as rmw_ret_t) {
+            return ret;
+        }
 
         // Copy enclave string if it exists
         if !(*src).enclave.is_null() {
@@ -150,6 +222,7 @@ pub extern "C" fn rmw_init_options_copy(
                 ) as *mut std::os::raw::c_char;
 
                 if new_enclave.is_null() {
+                    rmw_set_error_string(c"Failed to allocate memory for enclave".as_ptr());
                     return RMW_RET_BAD_ALLOC as _;
                 }
 
@@ -161,6 +234,7 @@ pub extern "C" fn rmw_init_options_copy(
                 (*dst).enclave = new_enclave;
             } else {
                 // If no allocator, we can't copy the enclave string
+                rmw_set_error_string(c"Invalid allocator for enclave copy".as_ptr());
                 return RMW_RET_INVALID_ARGUMENT as _;
             }
         } else {
@@ -193,6 +267,19 @@ pub extern "C" fn rmw_init_options_fini(init_options: *mut rmw_init_options_t) -
             }
         }
 
+        // Finalize security options (required to free allocated security_root_path)
+        let allocator_ptr = &(*init_options).allocator as *const _ as *mut _;
+        let ret = crate::ros::rmw_security_options_fini(&mut (*init_options).security_options, allocator_ptr);
+        if ret != (RMW_RET_OK as rmw_ret_t) {
+            return ret;
+        }
+
+        // Finalize discovery options (required by rolling)
+        let ret = crate::ros::rmw_discovery_options_fini(&mut (*init_options).discovery_options);
+        if ret != (RMW_RET_OK as rmw_ret_t) {
+            return ret;
+        }
+
         // Free impl if it exists (rmw_z doesn't use it, but be safe)
         if !(*init_options).impl_.is_null() {
             // For now, rmw_z doesn't allocate impl_, so nothing to do
@@ -212,6 +299,9 @@ pub extern "C" fn rmw_init(
         return RMW_RET_INVALID_ARGUMENT as _;
     }
 
+    // Initialize Zenoh logging
+    zenoh::init_log_from_env_or("error");
+
     // Check if already initialized
     if !unsafe { (*context).impl_.is_null() } {
         return RMW_RET_ALREADY_INIT as _;
@@ -219,7 +309,16 @@ pub extern "C" fn rmw_init(
 
     // Create context implementation
     let domain_id = unsafe { (*options).domain_id };
-    let enclave = "/".to_string(); // Default enclave
+    let enclave = unsafe {
+        if (*options).enclave.is_null() {
+            "/".to_string()
+        } else {
+            std::ffi::CStr::from_ptr((*options).enclave)
+                .to_str()
+                .unwrap_or("/")
+                .to_string()
+        }
+    };
     let context_impl = match ContextImpl::new(domain_id, enclave) {
         Ok(impl_) => impl_,
         Err(e) => {
@@ -295,4 +394,3 @@ pub extern "C" fn rmw_context_fini(context: *mut rmw_context_t) -> rmw_ret_t {
         Err(_) => RMW_RET_ERROR as _,
     }
 }
-

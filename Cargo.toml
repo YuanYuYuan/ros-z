@@ -33,11 +33,11 @@ serde_bytes = "0.11"
 serde_json = "1.0"
 
 # Zenoh
-zenoh = { version = "1.6.2", default-features = false, features = [
+zenoh = { version = "1.7.1", default-features = false, features = [
   "transport_tcp",
   "transport_serial",
 ] }
-zenoh-ext = { version = "1.6.2", features = ["unstable"] }
+zenoh-ext = { version = "1.7.1", features = ["unstable"] }
 
 # CLI
 clap = "4.5.45"

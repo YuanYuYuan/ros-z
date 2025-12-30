@@ -38,6 +38,7 @@ pub struct SubscriptionImpl {
     pub callback_user_data: std::sync::Mutex<*const crate::c_void>,
     pub graph: std::sync::Arc<ros_z::graph::Graph>,
     pub entity: ros_z::entity::EndpointEntity,
+    pub notifier: std::sync::Arc<crate::utils::Notifier>,
 }
 
 impl SubscriptionImpl {
@@ -45,6 +46,7 @@ impl SubscriptionImpl {
         unsafe { *taken = false; }
         let queue = self.inner.queue.as_ref()
             .ok_or_else(|| zenoh::Error::from("Subscriber was built with callback, no queue available"))?;
+
         if let Ok(sample) = queue.try_recv() {
             // Deserialize the sample payload into ros_message using ts
             // Assume the payload is CDR serialized
@@ -271,8 +273,35 @@ pub extern "C" fn rmw_publisher_get_actual_qos(
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
+    // Return the original QoS profile with unspecified durations converted to infinite
+    // Zenoh doesn't negotiate QoS like DDS, so the "actual" QoS is the requested QoS
+    let mut actual_qos = publisher_impl.qos;
+
+    // Convert zero/unspecified durations to RMW_DURATION_INFINITE (i32::MAX seconds)
+    // This matches the expected behavior from ROS 2 tests
+    const RMW_DURATION_INFINITE_SEC: u64 = i32::MAX as u64; // 2147483647
+
+    if actual_qos.deadline.sec == 0 && actual_qos.deadline.nsec == 0 {
+        actual_qos.deadline.sec = RMW_DURATION_INFINITE_SEC;
+        actual_qos.deadline.nsec = 0;
+    }
+    if actual_qos.lifespan.sec == 0 && actual_qos.lifespan.nsec == 0 {
+        actual_qos.lifespan.sec = RMW_DURATION_INFINITE_SEC;
+        actual_qos.lifespan.nsec = 0;
+    }
+    if actual_qos.liveliness_lease_duration.sec == 0 && actual_qos.liveliness_lease_duration.nsec == 0 {
+        actual_qos.liveliness_lease_duration.sec = RMW_DURATION_INFINITE_SEC;
+        actual_qos.liveliness_lease_duration.nsec = 0;
+    }
+
+    // Convert liveliness SYSTEM_DEFAULT (0) or UNKNOWN to AUTOMATIC (1)
+    if actual_qos.liveliness == rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT
+        || actual_qos.liveliness == rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_UNKNOWN {
+        actual_qos.liveliness = rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_AUTOMATIC;
+    }
+
     unsafe {
-        *qos = publisher_impl.qos;
+        *qos = actual_qos;
     }
     RMW_RET_OK as _
 }
@@ -434,7 +463,9 @@ pub extern "C" fn rmw_take_loaned_message(
     _taken: *mut bool,
     _allocation: *mut rmw_subscription_allocation_t,
 ) -> rmw_ret_t {
-    todo!()
+    // Loaned messages are not currently supported in this implementation
+    // Return RMW_RET_UNSUPPORTED to match the behavior of rmw_zenoh_cpp
+    RMW_RET_UNSUPPORTED as _
 }
 
 #[unsafe(no_mangle)]
@@ -445,7 +476,9 @@ pub extern "C" fn rmw_take_loaned_message_with_info(
     _message_info: *mut rmw_message_info_t,
     _allocation: *mut rmw_subscription_allocation_t,
 ) -> rmw_ret_t {
-    todo!()
+    // Loaned messages are not currently supported in this implementation
+    // Return RMW_RET_UNSUPPORTED to match the behavior of rmw_zenoh_cpp
+    RMW_RET_UNSUPPORTED as _
 }
 
 #[unsafe(no_mangle)]
@@ -500,8 +533,35 @@ pub extern "C" fn rmw_subscription_get_actual_qos(
         Err(_) => return RMW_RET_INVALID_ARGUMENT as _,
     };
 
+    // Return the original QoS profile with unspecified durations converted to infinite
+    // Zenoh doesn't negotiate QoS like DDS, so the "actual" QoS is the requested QoS
+    let mut actual_qos = subscription_impl.qos;
+
+    // Convert zero/unspecified durations to RMW_DURATION_INFINITE (i32::MAX seconds)
+    // This matches the expected behavior from ROS 2 tests
+    const RMW_DURATION_INFINITE_SEC: u64 = i32::MAX as u64; // 2147483647
+
+    if actual_qos.deadline.sec == 0 && actual_qos.deadline.nsec == 0 {
+        actual_qos.deadline.sec = RMW_DURATION_INFINITE_SEC;
+        actual_qos.deadline.nsec = 0;
+    }
+    if actual_qos.lifespan.sec == 0 && actual_qos.lifespan.nsec == 0 {
+        actual_qos.lifespan.sec = RMW_DURATION_INFINITE_SEC;
+        actual_qos.lifespan.nsec = 0;
+    }
+    if actual_qos.liveliness_lease_duration.sec == 0 && actual_qos.liveliness_lease_duration.nsec == 0 {
+        actual_qos.liveliness_lease_duration.sec = RMW_DURATION_INFINITE_SEC;
+        actual_qos.liveliness_lease_duration.nsec = 0;
+    }
+
+    // Convert liveliness SYSTEM_DEFAULT (0) or UNKNOWN to AUTOMATIC (1)
+    if actual_qos.liveliness == rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT
+        || actual_qos.liveliness == rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_UNKNOWN {
+        actual_qos.liveliness = rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_AUTOMATIC;
+    }
+
     unsafe {
-        *qos = subscription_impl.qos;
+        *qos = actual_qos;
     }
     RMW_RET_OK as _
 }

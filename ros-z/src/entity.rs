@@ -42,6 +42,7 @@ pub struct NodeEntity {
     pub id: usize,
     pub name: String,
     pub namespace: String,
+    pub enclave: String,
 }
 
 impl NodeEntity {
@@ -51,6 +52,7 @@ impl NodeEntity {
         id: usize,
         name: String,
         namespace: String,
+        enclave: String,
     ) -> Self {
         Self {
             domain_id,
@@ -58,11 +60,19 @@ impl NodeEntity {
             id,
             name,
             namespace,
+            enclave,
         }
     }
 
     pub fn key(&self) -> NodeKey {
-        (self.namespace.clone(), self.name.clone())
+        // Normalize namespace: "/" (root namespace) should be treated as "" (empty)
+        // This ensures consistent HashMap lookups across local and remote entities
+        let normalized_namespace = if self.namespace == "/" {
+            String::new()
+        } else {
+            self.namespace.clone()
+        };
+        (normalized_namespace, self.name.clone())
     }
 
     pub fn lv_token_key_expr(&self) -> Result<KeyExpr<'static>> {
@@ -75,7 +85,6 @@ impl TryFrom<&NodeEntity> for LivelinessKE {
     type Error = zenoh::Error;
 
     // <ADMIN_SPACE>/<domain_id>/<zid>/<nid>/<eid>/<entity_kind>/<enclave>/<namespace>/<node_name>
-    // NOTE: enclave is not supported yet
     fn try_from(value: &NodeEntity) -> std::result::Result<Self, Self::Error> {
         let NodeEntity {
             domain_id,
@@ -83,16 +92,22 @@ impl TryFrom<&NodeEntity> for LivelinessKE {
             id,
             name,
             namespace,
+            enclave,
         } = value;
         let namespace = if namespace.is_empty() {
             EMPTY_NAMESPACE
         } else {
             &mangle_name(namespace)
         };
+        let enclave_str = if enclave.is_empty() {
+            EMPTY_ENCLAVE
+        } else {
+            &mangle_name(enclave)
+        };
         let entity_kind = EntityKind::Node;
         let name = mangle_name(name);
         Ok(LivelinessKE(
-            format!("{ADMIN_SPACE}/{domain_id}/{z_id}/{id}/{id}/{entity_kind}/{EMPTY_ENCLAVE}/{namespace}/{name}")
+            format!("{ADMIN_SPACE}/{domain_id}/{z_id}/{id}/{id}/{entity_kind}/{enclave_str}/{namespace}/{name}")
                 .try_into()?,
         ))
     }
@@ -227,7 +242,6 @@ impl TryFrom<&EndpointEntity> for LivelinessKE {
     type Error = zenoh::Error;
 
     // <ADMIN_SPACE>/<domain_id>/<zid>/<nid>/<eid>/<entity_kind>/<enclave>/<namespace>/<node_name>/<topic_name>/<topic_type>/<topic_type_hash>/<topic_qos>
-    // NOTE: enclave is not supported yet
     fn try_from(value: &EndpointEntity) -> std::result::Result<Self, Self::Error> {
         let EndpointEntity {
             id,
@@ -238,6 +252,7 @@ impl TryFrom<&EndpointEntity> for LivelinessKE {
                     id: node_id,
                     name: node_name,
                     namespace: node_namespace,
+                    enclave: node_enclave,
                 },
             kind,
             topic: topic_name,
@@ -249,6 +264,11 @@ impl TryFrom<&EndpointEntity> for LivelinessKE {
             EMPTY_NAMESPACE
         } else {
             &mangle_name(node_namespace)
+        };
+        let node_enclave_str = if node_enclave.is_empty() {
+            EMPTY_ENCLAVE
+        } else {
+            &mangle_name(node_enclave)
         };
         let node_name = mangle_name(node_name);
 
@@ -268,7 +288,7 @@ impl TryFrom<&EndpointEntity> for LivelinessKE {
         let qos = qos.encode();
 
         Ok(LivelinessKE(format!(
-            "{ADMIN_SPACE}/{domain_id}/{z_id}/{node_id}/{id}/{kind}/{EMPTY_ENCLAVE}/{node_namespace}/{node_name}/{topic_name}/{type_info}/{qos}",
+            "{ADMIN_SPACE}/{domain_id}/{z_id}/{node_id}/{id}/{kind}/{node_enclave_str}/{node_namespace}/{node_name}/{topic_name}/{type_info}/{qos}",
         ).try_into()?))
     }
 }
@@ -443,10 +463,9 @@ impl TryFrom<&LivelinessKE> for Entity {
             .ok_or(MissingEntityKind)?
             .parse()
             .map_err(|_| ParsingError)?;
-        // NOTE: enclave is not supported yet
-        let _enclave = match iter.next().ok_or(MissingEnclave)? {
-            EMPTY_NAMESPACE => "",
-            _ => unreachable!(),
+        let enclave = match iter.next().ok_or(MissingEnclave)? {
+            EMPTY_ENCLAVE => "",
+            x => &demangle_name(x),
         };
         let namespace = match iter.next().ok_or(MissingNamespace)? {
             EMPTY_NAMESPACE => "",
@@ -460,6 +479,7 @@ impl TryFrom<&LivelinessKE> for Entity {
             z_id,
             name: node_name,
             namespace: namespace.to_string(),
+            enclave: enclave.to_string(),
         };
         Ok(match entity_kind {
             EntityKind::Node => Entity::Node(node),

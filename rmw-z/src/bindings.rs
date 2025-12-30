@@ -160,6 +160,10 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    #[doc = " Determine the length of a fixed-size string\n**\n* \\param[in] s Null terminated string to find the length of.\n* \\param[in] maxlen Maximum length to look to find the trailing \\0.\n* \\return The length of the string if it is less than maxlen, or\n* \\return maxlen if there is no \\0 among the first maxlen characters.\n*/"]
+    pub fn rcutils_strnlen(s: *const ::std::os::raw::c_char, maxlen: usize) -> usize;
+}
+unsafe extern "C" {
     pub fn rcutils_fault_injection_is_test_complete() -> bool;
 }
 unsafe extern "C" {
@@ -903,7 +907,13 @@ unsafe extern "C" {
     ) -> rcutils_ret_t;
 }
 unsafe extern "C" {
-    #[doc = " Initialize the logging system using the specified allocator.\n**\n* Initialize the logging system only if it was not in an initialized state.\n*\n* If an invalid allocator is passed, the initialization will fail.\n* Otherwise, this function will still set the internal state to initialized\n* even if an error occurs, to avoid repeated failing initialization attempts\n* since this function is called automatically from logging macros.\n* To re-attempt initialization, call rcutils_logging_shutdown() before\n* re-calling this function.\n*\n* If multiple errors occur, the error code of the last error will be returned.\n*\n* The `RCUTILS_CONSOLE_OUTPUT_FORMAT` environment variable can be used to set\n* the output format of messages logged to the console.\n* Available tokens are:\n*   - `file_name`, the full file name of the caller including the path\n*   - `function_name`, the function name of the caller\n*   - `line_number`, the line number of the caller\n*   - `message`, the message string after it has been formatted\n*   - `name`, the full logger name\n*   - `severity`, the name of the severity level, e.g. `INFO`\n*   - `time`, the timestamp of log message in floating point seconds\n*   - `time_as_nanoseconds`, the timestamp of log message in integer nanoseconds\n*\n* The `RCUTILS_COLORIZED_OUTPUT` environment variable allows configuring if colours\n* are used or not. Available values are:\n*  - `1`: Force using colours.\n*  - `0`: Don't use colours.\n* If it is unset, colours are used depending if the target stream is a terminal or not.\n* See `isatty` documentation.\n*\n* The format string can use these tokens by referencing them in curly brackets,\n* e.g. `\"[{severity}] [{name}]: {message} ({function_name}() at {file_name}:{line_number})\"`.\n* Any number of tokens can be used.\n* The limit of the format string is 2048 characters.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | Yes\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\param[in] allocator rcutils_allocator_t to be used.\n* \\return #RCUTILS_RET_OK if successful, or\n* \\return #RCUTILS_RET_INVALID_ARGUMENT if the allocator is invalid, in which\n*   case initialization will fail, or\n* \\return #RCUTILS_RET_INVALID_ARGUMENT if an error occurs reading the output\n*   format from the `RCUTILS_CONSOLE_OUTPUT_FORMAT` environment variable, in\n*   which case the default format will be used, or\n* \\return #RCUTILS_RET_LOGGING_SEVERITY_MAP_INVALID if the internal logger\n*   severity level map cannot be initialized, in which case logger severity\n*   levels will not be configurable.\n*/"]
+    #[doc = " Initialize the logging allocator.\n**\n* This function is called automatically when using the logging macros.\n* Initialize the logging allocator only if it is not initialized yet.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | No\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\return #RCUTILS_RET_OK if successful initialized, or\n* \\return #RCUTILS_RET_INVALID_ARGUMENT if the allocator is invalid.\n*/"]
+    pub fn rcutils_logging_allocator_initialize(
+        allocator: *const rcutils_allocator_t,
+    ) -> rcutils_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Initialize the logging system using the specified allocator.\n**\n* Call rcutils_logging_allocator_initialize() using allocator argument.\n* Initialize the logging system only if it was not in an initialized state.\n*\n* If an invalid allocator is passed, the initialization will fail.\n* Otherwise, this function will still set the internal state to initialized\n* even if an error occurs, to avoid repeated failing initialization attempts\n* since this function is called automatically from logging macros.\n* To re-attempt initialization, call rcutils_logging_shutdown() before\n* re-calling this function.\n*\n* If multiple errors occur, the error code of the last error will be returned.\n*\n* The `RCUTILS_CONSOLE_OUTPUT_FORMAT` environment variable can be used to set\n* the output format of messages logged to the console.\n* Available tokens are:\n*   - `file_name`, the full file name of the caller including the path\n*   - `function_name`, the function name of the caller\n*   - `line_number`, the line number of the caller\n*   - `message`, the message string after it has been formatted\n*   - `name`, the full logger name\n*   - `severity`, the name of the severity level, e.g. `INFO`\n*   - `time`, the timestamp of log message in floating point seconds\n*   - `time_as_nanoseconds`, the timestamp of log message in integer nanoseconds\n*\n* The `RCUTILS_COLORIZED_OUTPUT` environment variable allows configuring if colours\n* are used or not. Available values are:\n*  - `1`: Force using colours.\n*  - `0`: Don't use colours.\n* If it is unset, colours are used depending if the target stream is a terminal or not.\n* See `isatty` documentation.\n*\n* The format string can use these tokens by referencing them in curly brackets,\n* e.g. `\"[{severity}] [{name}]: {message} ({function_name}() at {file_name}:{line_number})\"`.\n* Any number of tokens can be used.\n* The limit of the format string is 2048 characters.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | Yes\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\param[in] allocator rcutils_allocator_t to be used.\n* \\return #RCUTILS_RET_OK if successful, or\n* \\return #RCUTILS_RET_INVALID_ARGUMENT if the allocator is invalid, in which\n*   case initialization will fail, or\n* \\return #RCUTILS_RET_INVALID_ARGUMENT if an error occurs reading the output\n*   format from the `RCUTILS_CONSOLE_OUTPUT_FORMAT` environment variable, in\n*   which case the default format will be used, or\n* \\return #RCUTILS_RET_LOGGING_SEVERITY_MAP_INVALID if the internal logger\n*   severity level map cannot be initialized, in which case logger severity\n*   levels will not be configurable.\n*/"]
     pub fn rcutils_logging_initialize_with_allocator(
         allocator: rcutils_allocator_t,
     ) -> rcutils_ret_t;
@@ -1366,16 +1376,35 @@ unsafe extern "C" {
     #[doc = " Return a zero-initialized discovery options structure."]
     pub fn rmw_get_zero_initialized_discovery_options() -> rmw_discovery_options_t;
 }
-#[doc = " Uses ROS_LOCALHOST_ONLY environment variable."]
-pub const rmw_localhost_only_e_RMW_LOCALHOST_ONLY_DEFAULT: rmw_localhost_only_e = 0;
-#[doc = " Forces using only localhost."]
-pub const rmw_localhost_only_e_RMW_LOCALHOST_ONLY_ENABLED: rmw_localhost_only_e = 1;
-#[doc = " Forces disabling localhost only."]
-pub const rmw_localhost_only_e_RMW_LOCALHOST_ONLY_DISABLED: rmw_localhost_only_e = 2;
-#[doc = " Used to specify if the context can only communicate through localhost."]
-pub type rmw_localhost_only_e = ::std::os::raw::c_uint;
-#[doc = " Used to specify if the context can only communicate through localhost."]
-pub use self::rmw_localhost_only_e as rmw_localhost_only_t;
+unsafe extern "C" {
+    #[doc = " Initialize a discovery options structure with a set number of static peers.\n**\n* This function initializes rmw_discovery_options_t with space for a set number of static peers.\n*\n* \\param[in] discovery_options Pointer to a zero initialized option structure to be initialized on\n* success, but left unchanged on failure.\n* \\param[in] size Number of static peers to allocate space for.\n* \\param[in] allocator Allocator to be used to allocate memory.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `discovery_options` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `discovery_options` is not\n*   zero initialized, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `allocator` is invalid,\n*   by rcutils_allocator_is_valid() definition, or\n* \\returns `RMW_BAD_ALLOC` if memory allocation fails, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_discovery_options_init(
+        discovery_options: *mut rmw_discovery_options_t,
+        size: usize,
+        allocator: *mut rcutils_allocator_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Compare two discovery parameter instances for equality.\n**\n* Equality means the automatic_discovery_range values are equal, they have the same\n* static_peers_count value, and each entry in static_peers is evaluated as\n* equal using strncmp.\n*\n* NOTE: If the two parameter structs list the static peers in different orders\n* then this will evaulate as NOT equal.\n*\n* \\param[in] left - The first set of options to compare\n* \\param[in] right - The second set of options to compare\n* \\param[out] result - The result of the calculation.\n*\n* \\return RMW_RET_OK when the input arguments are valid.\n* \\return RMW_RET_INVALID_ARGUMENT will be returned when any input is a nullptr,\n* or if something in either struct was malformed, such as static_peers being\n* a nullptr while static_peers_count is non-zero.\n*/"]
+    pub fn rmw_discovery_options_equal(
+        left: *const rmw_discovery_options_t,
+        right: *const rmw_discovery_options_t,
+        result: *mut bool,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Perform a deep copy of the discovery options from src into dst using the\n given allocator.\n**\n* The dst will be left with an owned copy of the static peers array whose\n* string values match the src.\n* If successful, src and dst will evaluate as equal using\n* rmw_discovery_options_equal.\n*\n* \\param[in] src discovery options to be copied.\n* \\param[in] allocator to use.\n* \\param[out] dst Destination options to use.\n* \\return RMW_RET_OK if success.\n* \\return RMW_RET_INVALID_ARGUMENT if either the src, allocator or dst is null, or\n* \\return RMW_RET_INVALID_ARGUMENT if src and dst are the same object.\n* \\return RMW_RET_BAD_ALLOC if allocation fails.\n*/"]
+    pub fn rmw_discovery_options_copy(
+        src: *const rmw_discovery_options_t,
+        allocator: *mut rcutils_allocator_t,
+        dst: *mut rmw_discovery_options_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Destructor for rmw_discovery_options_t\n**\n* \\param[in] discovery_options to destroy\n* \\return RMW_RET_OK if success.\n* \\return RMW_RET_INVALID_ARGUMENT if allocator is invalid\n* or discovery_options is null.\n*/"]
+    pub fn rmw_discovery_options_fini(discovery_options: *mut rmw_discovery_options_t)
+    -> rmw_ret_t;
+}
 pub const rmw_security_enforcement_policy_e_RMW_SECURITY_ENFORCEMENT_PERMISSIVE:
     rmw_security_enforcement_policy_e = 0;
 pub const rmw_security_enforcement_policy_e_RMW_SECURITY_ENFORCEMENT_ENFORCE:
@@ -1454,8 +1483,6 @@ pub struct rmw_init_options_s {
     pub domain_id: usize,
     #[doc = " Security options"]
     pub security_options: rmw_security_options_t,
-    #[doc = " Enable localhost only"]
-    pub localhost_only: rmw_localhost_only_t,
     #[doc = " Configure discovery"]
     pub discovery_options: rmw_discovery_options_t,
     #[doc = " Enclave, name used to find security artifacts in a sros2 keystore."]
@@ -1467,7 +1494,7 @@ pub struct rmw_init_options_s {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of rmw_init_options_s"][::std::mem::size_of::<rmw_init_options_s>() - 168usize];
+    ["Size of rmw_init_options_s"][::std::mem::size_of::<rmw_init_options_s>() - 160usize];
     ["Alignment of rmw_init_options_s"][::std::mem::align_of::<rmw_init_options_s>() - 8usize];
     ["Offset of field: rmw_init_options_s::instance_id"]
         [::std::mem::offset_of!(rmw_init_options_s, instance_id) - 0usize];
@@ -1477,16 +1504,14 @@ const _: () = {
         [::std::mem::offset_of!(rmw_init_options_s, domain_id) - 16usize];
     ["Offset of field: rmw_init_options_s::security_options"]
         [::std::mem::offset_of!(rmw_init_options_s, security_options) - 24usize];
-    ["Offset of field: rmw_init_options_s::localhost_only"]
-        [::std::mem::offset_of!(rmw_init_options_s, localhost_only) - 40usize];
     ["Offset of field: rmw_init_options_s::discovery_options"]
-        [::std::mem::offset_of!(rmw_init_options_s, discovery_options) - 48usize];
+        [::std::mem::offset_of!(rmw_init_options_s, discovery_options) - 40usize];
     ["Offset of field: rmw_init_options_s::enclave"]
-        [::std::mem::offset_of!(rmw_init_options_s, enclave) - 112usize];
+        [::std::mem::offset_of!(rmw_init_options_s, enclave) - 104usize];
     ["Offset of field: rmw_init_options_s::allocator"]
-        [::std::mem::offset_of!(rmw_init_options_s, allocator) - 120usize];
+        [::std::mem::offset_of!(rmw_init_options_s, allocator) - 112usize];
     ["Offset of field: rmw_init_options_s::impl_"]
-        [::std::mem::offset_of!(rmw_init_options_s, impl_) - 160usize];
+        [::std::mem::offset_of!(rmw_init_options_s, impl_) - 152usize];
 };
 impl Default for rmw_init_options_s {
     fn default() -> Self {
@@ -1527,7 +1552,7 @@ pub struct rmw_context_s {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of rmw_context_s"][::std::mem::size_of::<rmw_context_s>() - 200usize];
+    ["Size of rmw_context_s"][::std::mem::size_of::<rmw_context_s>() - 192usize];
     ["Alignment of rmw_context_s"][::std::mem::align_of::<rmw_context_s>() - 8usize];
     ["Offset of field: rmw_context_s::instance_id"]
         [::std::mem::offset_of!(rmw_context_s, instance_id) - 0usize];
@@ -1536,9 +1561,9 @@ const _: () = {
     ["Offset of field: rmw_context_s::options"]
         [::std::mem::offset_of!(rmw_context_s, options) - 16usize];
     ["Offset of field: rmw_context_s::actual_domain_id"]
-        [::std::mem::offset_of!(rmw_context_s, actual_domain_id) - 184usize];
+        [::std::mem::offset_of!(rmw_context_s, actual_domain_id) - 176usize];
     ["Offset of field: rmw_context_s::impl_"]
-        [::std::mem::offset_of!(rmw_context_s, impl_) - 192usize];
+        [::std::mem::offset_of!(rmw_context_s, impl_) - 184usize];
 };
 impl Default for rmw_context_s {
     fn default() -> Self {
@@ -1660,6 +1685,10 @@ pub const rmw_endpoint_type_e_RMW_ENDPOINT_INVALID: rmw_endpoint_type_e = 0;
 pub const rmw_endpoint_type_e_RMW_ENDPOINT_PUBLISHER: rmw_endpoint_type_e = 1;
 #[doc = " Listens for and receives messages from a topic"]
 pub const rmw_endpoint_type_e_RMW_ENDPOINT_SUBSCRIPTION: rmw_endpoint_type_e = 2;
+#[doc = " Sends requests and receives responses as part of a service client"]
+pub const rmw_endpoint_type_e_RMW_ENDPOINT_CLIENT: rmw_endpoint_type_e = 3;
+#[doc = " Receives requests and sends responses as part of a service server"]
+pub const rmw_endpoint_type_e_RMW_ENDPOINT_SERVER: rmw_endpoint_type_e = 4;
 #[doc = " Endpoint enumeration type"]
 pub type rmw_endpoint_type_e = ::std::os::raw::c_uint;
 #[doc = " Endpoint enumeration type"]
@@ -2298,11 +2327,11 @@ pub struct rmw_qos_profile_s {
     pub durability: rmw_qos_durability_policy_e,
     #[doc = " The period at which messages are expected to be sent/received\n**\n* RMW_DURATION_UNSPECIFIED will use the RMW implementation's default value,\n*   which may or may not be infinite.\n* RMW_DURATION_INFINITE explicitly states that messages never miss a deadline expectation.\n*/"]
     pub deadline: rmw_time_s,
-    #[doc = " The age at which messages are considered expired and no longer valid\n**\n* RMW_DURATION_UNSPEFICIED will use the RMW implementation's default value,\n*   which may or may not be infinite.\n* RMW_DURATION_INFINITE explicitly states that messages do not expire.\n*/"]
+    #[doc = " The age at which messages are considered expired and no longer valid\n**\n* RMW_DURATION_UNSPECIFIED will use the RMW implementation's default value,\n*   which may or may not be infinite.\n* RMW_DURATION_INFINITE explicitly states that messages do not expire.\n*/"]
     pub lifespan: rmw_time_s,
     #[doc = " Liveliness QoS policy setting"]
     pub liveliness: rmw_qos_liveliness_policy_e,
-    #[doc = " The time within which the RMW node or publisher must show that it is alive\n**\n* RMW_DURATION_UNSPEFICIED will use the RMW implementation's default value,\n*   which may or may not be infinite.\n* RMW_DURATION_INFINITE explicitly states that liveliness is not enforced.\n*/"]
+    #[doc = " The time within which the RMW node or publisher must show that it is alive\n**\n* RMW_DURATION_UNSPECIFIED will use the RMW implementation's default value,\n*   which may or may not be infinite.\n* RMW_DURATION_INFINITE explicitly states that liveliness is not enforced.\n*/"]
     pub liveliness_lease_duration: rmw_time_s,
     #[doc = " If true, any ROS specific namespacing conventions will be circumvented.\n**\n* In the case of DDS and topics, for example, this means the typical\n* ROS specific prefix of `rt` would not be applied as described here:\n*\n*   http://design.ros2.org/articles/topic_and_service_names.html#ros-specific-namespace-prefix\n*\n* This might be useful when trying to directly connect a native DDS topic\n* with a ROS 2 topic.\n*/"]
     pub avoid_ros_namespace_conventions: bool,
@@ -2433,18 +2462,19 @@ pub const rmw_log_severity_t_RMW_LOG_SEVERITY_ERROR: rmw_log_severity_t = 40;
 pub const rmw_log_severity_t_RMW_LOG_SEVERITY_FATAL: rmw_log_severity_t = 50;
 #[doc = " Type mapping of rcutils log severity types to rmw specific types."]
 pub type rmw_log_severity_t = ::std::os::raw::c_uint;
-pub const rmw_event_type_e_RMW_EVENT_LIVELINESS_CHANGED: rmw_event_type_e = 0;
-pub const rmw_event_type_e_RMW_EVENT_REQUESTED_DEADLINE_MISSED: rmw_event_type_e = 1;
-pub const rmw_event_type_e_RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE: rmw_event_type_e = 2;
-pub const rmw_event_type_e_RMW_EVENT_MESSAGE_LOST: rmw_event_type_e = 3;
-pub const rmw_event_type_e_RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE: rmw_event_type_e = 4;
-pub const rmw_event_type_e_RMW_EVENT_SUBSCRIPTION_MATCHED: rmw_event_type_e = 5;
-pub const rmw_event_type_e_RMW_EVENT_LIVELINESS_LOST: rmw_event_type_e = 6;
-pub const rmw_event_type_e_RMW_EVENT_OFFERED_DEADLINE_MISSED: rmw_event_type_e = 7;
-pub const rmw_event_type_e_RMW_EVENT_OFFERED_QOS_INCOMPATIBLE: rmw_event_type_e = 8;
-pub const rmw_event_type_e_RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE: rmw_event_type_e = 9;
-pub const rmw_event_type_e_RMW_EVENT_PUBLICATION_MATCHED: rmw_event_type_e = 10;
-pub const rmw_event_type_e_RMW_EVENT_INVALID: rmw_event_type_e = 11;
+pub const rmw_event_type_e_RMW_EVENT_INVALID: rmw_event_type_e = 0;
+pub const rmw_event_type_e_RMW_EVENT_LIVELINESS_CHANGED: rmw_event_type_e = 1;
+pub const rmw_event_type_e_RMW_EVENT_REQUESTED_DEADLINE_MISSED: rmw_event_type_e = 2;
+pub const rmw_event_type_e_RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE: rmw_event_type_e = 3;
+pub const rmw_event_type_e_RMW_EVENT_MESSAGE_LOST: rmw_event_type_e = 4;
+pub const rmw_event_type_e_RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE: rmw_event_type_e = 5;
+pub const rmw_event_type_e_RMW_EVENT_SUBSCRIPTION_MATCHED: rmw_event_type_e = 6;
+pub const rmw_event_type_e_RMW_EVENT_LIVELINESS_LOST: rmw_event_type_e = 7;
+pub const rmw_event_type_e_RMW_EVENT_OFFERED_DEADLINE_MISSED: rmw_event_type_e = 8;
+pub const rmw_event_type_e_RMW_EVENT_OFFERED_QOS_INCOMPATIBLE: rmw_event_type_e = 9;
+pub const rmw_event_type_e_RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE: rmw_event_type_e = 10;
+pub const rmw_event_type_e_RMW_EVENT_PUBLICATION_MATCHED: rmw_event_type_e = 11;
+pub const rmw_event_type_e_RMW_EVENT_TYPE_MAX: rmw_event_type_e = 12;
 #[doc = " Define publisher/subscription events"]
 pub type rmw_event_type_e = ::std::os::raw::c_uint;
 #[doc = " Define publisher/subscription events"]
@@ -2884,6 +2914,193 @@ unsafe extern "C" {
         allocator: *mut rcutils_allocator_t,
     ) -> rmw_ret_t;
 }
+#[doc = " A data structure that encapsulates the node name, node namespace,\n service_type, service_type_hash, endpoint_count, gids and qos_profiles of clients and servers.\n for a service."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rmw_service_endpoint_info_s {
+    #[doc = " Name of the node"]
+    pub node_name: *const ::std::os::raw::c_char,
+    #[doc = " Namespace of the node"]
+    pub node_namespace: *const ::std::os::raw::c_char,
+    #[doc = " The associated service type's name"]
+    pub service_type: *const ::std::os::raw::c_char,
+    #[doc = " Hashed value for service type's description"]
+    pub service_type_hash: rosidl_type_hash_t,
+    #[doc = " The endpoint type"]
+    pub endpoint_type: rmw_endpoint_type_t,
+    #[doc = " The `endpoint_count` value is determined as follows:\n - 1 if the middleware explicitly supports services (e.g., Zenoh).\n - 2 if request/response are represented as separate reader/writer topics (e.g., DDS)."]
+    pub endpoint_count: usize,
+    #[doc = " The GIDs of the endpoint(s). The array size is `endpoint_count`.\n If the middleware represents the request and response as separate topics,\n the GIDs should be provided sequentially in the order: reader, writer."]
+    pub endpoint_gids: *mut [u8; 16usize],
+    #[doc = " QoS profiles of the endpoint(s). The array size is `endpoint_count`.\n If the middleware represents the request and response as separate topics,\n the QoS profiles should be provided sequentially in the order: reader, writer"]
+    pub qos_profiles: *mut rmw_qos_profile_t,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of rmw_service_endpoint_info_s"]
+        [::std::mem::size_of::<rmw_service_endpoint_info_s>() - 88usize];
+    ["Alignment of rmw_service_endpoint_info_s"]
+        [::std::mem::align_of::<rmw_service_endpoint_info_s>() - 8usize];
+    ["Offset of field: rmw_service_endpoint_info_s::node_name"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_s, node_name) - 0usize];
+    ["Offset of field: rmw_service_endpoint_info_s::node_namespace"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_s, node_namespace) - 8usize];
+    ["Offset of field: rmw_service_endpoint_info_s::service_type"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_s, service_type) - 16usize];
+    ["Offset of field: rmw_service_endpoint_info_s::service_type_hash"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_s, service_type_hash) - 24usize];
+    ["Offset of field: rmw_service_endpoint_info_s::endpoint_type"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_s, endpoint_type) - 60usize];
+    ["Offset of field: rmw_service_endpoint_info_s::endpoint_count"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_s, endpoint_count) - 64usize];
+    ["Offset of field: rmw_service_endpoint_info_s::endpoint_gids"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_s, endpoint_gids) - 72usize];
+    ["Offset of field: rmw_service_endpoint_info_s::qos_profiles"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_s, qos_profiles) - 80usize];
+};
+impl Default for rmw_service_endpoint_info_s {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[doc = " A data structure that encapsulates the node name, node namespace,\n service_type, service_type_hash, endpoint_count, gids and qos_profiles of clients and servers.\n for a service."]
+pub type rmw_service_endpoint_info_t = rmw_service_endpoint_info_s;
+unsafe extern "C" {
+    #[doc = " Return zero initialized service endpoint info data structure.\n**\n* Endpoint type will be invalid.\n* Endpoint QoS profile will be the system default.\n*/"]
+    pub fn rmw_get_zero_initialized_service_endpoint_info() -> rmw_service_endpoint_info_t;
+}
+unsafe extern "C" {
+    #[doc = " Finalize a service endpoint info data structure.\n**\n* Deallocates all allocated members of the given data structure,\n* and then zero initializes it.\n* If a logical error, such as `RMW_RET_INVALID_ARGUMENT`, ensues, this function\n* will return early, leaving the given data structure unchanged.\n* Otherwise, it will proceed despite errors.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | No\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Finalization is a reentrant procedure, but:\n*   - Access to the service endpoint info data structure is not synchronized.\n*     It is not safe to read or write `service_endpoint` during finalization.\n*   - The default allocators are thread-safe objects, but any custom `allocator` may not be.\n*     Check your allocator documentation for further reference.\n*\n* \\param[inout] service_endpoint_info Data structure to be finalized.\n* \\param[in] allocator Allocator used to populate the given `service_endpoint_info`.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `allocator` is invalid,\n*   by rcutils_allocator_is_valid() definition, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_fini(
+        service_endpoint_info: *mut rmw_service_endpoint_info_t,
+        allocator: *mut rcutils_allocator_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Set the service type in the given service endpoint info data structure.\n**\n* Allocates memory and copies the value of the `service_type`\n* argument to set the data structure's `service_type` member.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | Yes\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Setting a member is a reentrant procedure, but:\n*   - Access to the service endpoint info data structure is not synchronized.\n*     It is not safe to read or write the `service_type` member of the given `service_endpoint`\n*     while setting it.\n*   - Access to C-style string arguments is read-only but it is not synchronized.\n*     Concurrent `service_type` reads are safe, but concurrent reads and writes are not.\n*   - The default allocators are thread-safe objects, but any custom `allocator` may not be.\n*     Check your allocator documentation for further reference.\n*\n* \\pre Given `service_type` is a valid C-style string i.e. NULL terminated.\n*\n* \\param[inout] service_endpoint_info Data structure to be populated.\n* \\param[in] service_type Type name to be set.\n* \\param[in] allocator Allocator to be used.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_type` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `allocator` is NULL, or\n* \\returns `RMW_RET_BAD_ALLOC` if memory allocation fails, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_set_service_type(
+        service_endpoint_info: *mut rmw_service_endpoint_info_t,
+        service_type: *const ::std::os::raw::c_char,
+        allocator: *mut rcutils_allocator_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Set the service type hash in the given service endpoint info data structure.\n**\n* Assigns the value of the `service_type_hash` argument to the data structure's\n* `service_type_hash` member.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | No\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Setting a member is a reentrant procedure, but:\n*   - Access to the service endpoint info data structure is not synchronized.\n*     It is not safe to read or write the `service_type_hash` member of the given `service_endpoint`\n*     while setting it.\n*     Concurrent `service_type_hash` reads are safe, but concurrent reads and writes are not.\n*\n* \\param[inout] service_endpoint_info Data structure to be populated.\n* \\param[in] type_hash Service type hash to be copied.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_type_hash` is NULL, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_set_service_type_hash(
+        service_endpoint_info: *mut rmw_service_endpoint_info_t,
+        type_hash: *const rosidl_type_hash_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Set the node name in the given service endpoint info data structure.\n**\n* Allocates memory and copies the value of the `node_name`\n* argument to set the data structure's `node_name` member.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | Yes\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Setting a member is a reentrant procedure, but:\n*   - Access to the service endpoint info data structure is not synchronized.\n*     It is not safe to read or write the `node_name` member of the given `service_endpoint`\n*     while setting it.\n*   - Access to C-style string arguments is read-only but it is not synchronized.\n*     Concurrent `node_name` reads are safe, but concurrent reads and writes are not.\n*   - The default allocators are thread-safe objects, but any custom `allocator` may not be.\n*     Check your allocator documentation for further reference.\n*\n* \\pre Given `node_name` is a valid C-style string i.e. NULL terminated.\n*\n* \\param[inout] service_endpoint_info Data structure to be populated.\n* \\param[in] node_name Node name to be set.\n* \\param[in] allocator Allocator to be used.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `node_name` is NULL, or\n* \\returns `RMW_RET_BAD_ALLOC` if memory allocation fails, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_set_node_name(
+        service_endpoint_info: *mut rmw_service_endpoint_info_t,
+        node_name: *const ::std::os::raw::c_char,
+        allocator: *mut rcutils_allocator_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Set the node namespace in the given service endpoint info data structure.\n**\n* Allocates memory and copies the value of the `node_namespace`\n* argument to set the data structure's `node_namespace` member.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | Yes\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Setting a member is a reentrant procedure, but:\n*   - Access to the service endpoint info data structure is not synchronized.\n*     It is not safe to read or write the `node_namespace` member of the given `service_endpoint`\n*     while setting it.\n*   - Access to C-style string arguments is read-only but it is not synchronized.\n*     Concurrent `node_namespace` reads are safe, but concurrent reads and writes are not.\n*   - The default allocators are thread-safe objects, but any custom `allocator` may not be.\n*     Check your allocator documentation for further reference.\n*\n* \\pre Given `node_namespace` is a valid C-style string i.e. NULL terminated.\n*\n* \\param[inout] service_endpoint_info Data structure to be populated.\n* \\param[in] node_namespace Node namespace to be set.\n* \\param[in] allocator Allocator to be used.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `node_namespace` is NULL, or\n* \\returns `RMW_RET_BAD_ALLOC` if memory allocation fails, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_set_node_namespace(
+        service_endpoint_info: *mut rmw_service_endpoint_info_t,
+        node_namespace: *const ::std::os::raw::c_char,
+        allocator: *mut rcutils_allocator_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Set the endpoint type in the given service endpoint info data structure.\n**\n* Assigns the value of the `type` argument to the data structure's\n* `endpoint_type` member.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | No\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Setting a member is a reentrant procedure, but access to the\n*   service endpoint info data structure is not synchronized.\n*   It is not safe to read or write the `endpoint_type` member of the\n*   given `service_endpoint` while setting it.\n*\n* \\param[inout] service_endpoint_info Data structure to be populated.\n* \\param[in] type Endpoint type to be set.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info` is NULL, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_set_endpoint_type(
+        service_endpoint_info: *mut rmw_service_endpoint_info_t,
+        type_: rmw_endpoint_type_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Set the endpoint count in the given service endpoint info data structure.\n**\n* Assigns the value of the `endpoint_count` argument to the data structure's\n* `endpoint_count` member.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | No\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Setting a member is a reentrant procedure, but access to the\n*   service endpoint info data structure is not synchronized.\n*   It is not safe to read or write the `endpoint_type` member of the\n*   given `service_endpoint` while setting it.\n*\n* \\param[inout] service_endpoint_info Data structure to be populated.\n* \\param[in] endpoint_count Endpoint count to be set.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if 'endpoint_count' is not 1 or 2, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_set_endpoint_count(
+        service_endpoint_info: *mut rmw_service_endpoint_info_t,
+        endpoint_count: usize,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Set the endpoint gids in the given service endpoint info data structure.\n**\n* Copies the value of the `gids` argument to the data structure's\n* `endpoint_gids` member.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | Yes\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Setting a member is a reentrant procedure, but access to the\n*   service endpoint info data structure is not synchronized.\n*   It is not safe to read or write the `gid` member of the\n*   given `service_endpoint` while setting it.\n*\n* \\param[inout] service_endpoint_info Data structure to be populated.\n* \\param[in] gids Pointer to a buffer containing endpoint GIDs to set.\n* \\param[in] endpoint_count Number of endpoints used to construct the service.\n* \\param[in] size Size in bytes of each individual `gid`.\n* \\param[in] allocator Allocator to be used.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `gids` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if 'endpoint_count' is not 1 or 2, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `size` is greater than RMW_GID_STORAGE_SIZE, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `allocator` is NULL, or\n* \\returns `RMW_RET_BAD_ALLOC` if memory allocation fails, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_set_gids(
+        service_endpoint_info: *mut rmw_service_endpoint_info_t,
+        gids: *const u8,
+        endpoint_count: usize,
+        size: usize,
+        allocator: *mut rcutils_allocator_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Set the endpoint QoS profiles in the given service endpoint info data structure.\n**\n* Assigns the value of the `qos_profiles` argument to the data structure's\n* `qos_profiles` member.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | Yes\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Setting a member is a reentrant procedure, but access to the\n*   service endpoint info data structure is not synchronized.\n*   It is not safe to read or write the `qos_profile` member of the\n*   given `service_endpoint` while setting it.\n*\n* \\param[inout] service_endpoint_info Data structure to be populated.\n* \\param[in] qos_profiles An array of QoS profiles to be assigned.\n* \\param[in] endpoint_count Number of endpoints used to construct the service.\n* \\param[in] allocator Allocator to be used.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `qos_profiles` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if 'endpoint_count' is not 1 or 2, or\n* \\returns `RMW_RET_BAD_ALLOC` if memory allocation fails, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_set_qos_profiles(
+        service_endpoint_info: *mut rmw_service_endpoint_info_t,
+        qos_profiles: *const rmw_qos_profile_t,
+        endpoint_count: usize,
+        allocator: *mut rcutils_allocator_t,
+    ) -> rmw_ret_t;
+}
+#[doc = " Array of service endpoint information"]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rmw_service_endpoint_info_array_s {
+    #[doc = " Size of the array."]
+    pub size: usize,
+    #[doc = " Contiguous storage for service endpoint information elements."]
+    pub info_array: *mut rmw_service_endpoint_info_t,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of rmw_service_endpoint_info_array_s"]
+        [::std::mem::size_of::<rmw_service_endpoint_info_array_s>() - 16usize];
+    ["Alignment of rmw_service_endpoint_info_array_s"]
+        [::std::mem::align_of::<rmw_service_endpoint_info_array_s>() - 8usize];
+    ["Offset of field: rmw_service_endpoint_info_array_s::size"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_array_s, size) - 0usize];
+    ["Offset of field: rmw_service_endpoint_info_array_s::info_array"]
+        [::std::mem::offset_of!(rmw_service_endpoint_info_array_s, info_array) - 8usize];
+};
+impl Default for rmw_service_endpoint_info_array_s {
+    fn default() -> Self {
+        let mut s = ::std::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::std::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[doc = " Array of service endpoint information"]
+pub type rmw_service_endpoint_info_array_t = rmw_service_endpoint_info_array_s;
+unsafe extern "C" {
+    #[doc = " Return a zero initialized array of service endpoint information."]
+    pub fn rmw_get_zero_initialized_service_endpoint_info_array()
+    -> rmw_service_endpoint_info_array_t;
+}
+unsafe extern "C" {
+    #[doc = " Check that the given `service_endpoint_info_array` is zero initialized.\n**\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | No\n* Thread-Safe        | Yes\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Access to the array of service endpoint information is read-only, but it is not synchronized.\n*   Concurrent `service_endpoint_info_array` reads are safe, but concurrent reads\n*   and writes are not.\n*\n* \\param[in] service_endpoint_info_array Array to be checked.\n* \\returns `RMW_RET_OK` if array is zero initialized, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info_array` is NULL, or\n* \\returns `RMW_RET_ERROR` if `service_endpoint_info_array` is not zero initialized.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_array_check_zero(
+        service_endpoint_info_array: *mut rmw_service_endpoint_info_array_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Initialize an array of service endpoint information.\n**\n* This function allocates space to hold `size` service endpoint information elements.\n* Both `info_array` and `size` members are updated accordingly.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | Yes\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Initialization is a reentrant procedure, but:\n*   - Access to the array of service endpoint information is not synchronized.\n*     It is not safe to read or write `service_endpoint_info_array` during initialization.\n*   - The default allocators are thread-safe objects, but any custom `allocator` may not be.\n*     Check your allocator documentation for further reference.\n*\n* \\param[inout] service_endpoint_info_array Array to be initialized on success,\n*   but left unchanged on failure.\n* \\param[in] size Size of the array.\n* \\param[in] allocator Allocator to be used to populate `names_and_types`.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info_array` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info_array` is not\n*   a zero initialized array, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `allocator` is invalid,\n*   by rcutils_allocator_is_valid() definition, or\n* \\returns `RMW_BAD_ALLOC` if memory allocation fails, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_array_init_with_size(
+        service_endpoint_info_array: *mut rmw_service_endpoint_info_array_t,
+        size: usize,
+        allocator: *mut rcutils_allocator_t,
+    ) -> rmw_ret_t;
+}
+unsafe extern "C" {
+    #[doc = " Finalize an array of service endpoint information.\n**\n* This function deallocates the given array storage, and then zero initializes it.\n* If a logical error, such as `RMW_RET_INVALID_ARGUMENT`, ensues, this function will\n* return early, leaving the given array unchanged.\n* Otherwise, it will proceed despite errors.\n*\n* <hr>\n* Attribute          | Adherence\n* ------------------ | -------------\n* Allocates Memory   | No\n* Thread-Safe        | No\n* Uses Atomics       | No\n* Lock-Free          | Yes\n*\n* \\par Thread-safety\n*   Finalization is a reentrant procedure, but:\n*   - Access to the array of service endpoint information is not synchronized.\n*     It is not safe to read or write `service_endpoint_info_array` during finalization.\n*   - The default allocators are thread-safe objects, but any custom `allocator` may not be.\n*     Check your allocator documentation for further reference.\n*\n* \\pre Given `allocator` must be the same used to initialize the given `service_endpoint_info_array`.\n*\n* \\param[inout] service_endpoint_info_array object to be finalized.\n* \\param[in] allocator Allocator used to populate the given `service_endpoint_info_array`.\n* \\returns `RMW_RET_OK` if successful, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `service_endpoint_info_array` is NULL, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` if `allocator` is invalid,\n*   by rcutils_allocator_is_valid() definition, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n* \\remark This function sets the RMW error state on failure.\n*/"]
+    pub fn rmw_service_endpoint_info_array_fini(
+        service_endpoint_info_array: *mut rmw_service_endpoint_info_array_t,
+        allocator: *mut rcutils_allocator_t,
+    ) -> rmw_ret_t;
+}
 unsafe extern "C" {
     #[doc = " Check that a string_array struct is zero initialized\n**\n* This sets error message and returns error code if array is not zero initialized\n*\n* \\param[in] array The string array to check\n* \\return RMW_RET_OK if array is zero initialized, otherwise RMW_RET_ERROR\n*/"]
     pub fn rmw_check_zero_rmw_string_array(array: *mut rcutils_string_array_t) -> rmw_ret_t;
@@ -2897,7 +3114,7 @@ unsafe extern "C" {
     ) -> rmw_ret_t;
 }
 unsafe extern "C" {
-    #[doc = " Deterimine if a given node name is valid.\n**\n* This is an overload with an extra parameter for the length of node_name.\n*\n* \\sa rmw_validate_node_name(const char *, int *, size_t *)\n*\n* \\param[in] node_name node name to be validated\n* \\param[in] node_name_length The number of characters in node_name.\n* \\param[out] validation_result int in which the result of the check is stored\n* \\param[out] invalid_index size_t index of the input string where an error occurred\n* \\returns `RMW_RET_OK` on successfully running the check, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` on invalid parameters, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n*/"]
+    #[doc = " Determine if a given node name is valid.\n**\n* This is an overload with an extra parameter for the length of node_name.\n*\n* \\sa rmw_validate_node_name(const char *, int *, size_t *)\n*\n* \\param[in] node_name node name to be validated\n* \\param[in] node_name_length The number of characters in node_name.\n* \\param[out] validation_result int in which the result of the check is stored\n* \\param[out] invalid_index size_t index of the input string where an error occurred\n* \\returns `RMW_RET_OK` on successfully running the check, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` on invalid parameters, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n*/"]
     pub fn rmw_validate_node_name_with_size(
         node_name: *const ::std::os::raw::c_char,
         node_name_length: usize,
@@ -2914,7 +3131,7 @@ unsafe extern "C" {
     ) -> rmw_ret_t;
 }
 unsafe extern "C" {
-    #[doc = " Deterimine if a given topic name is valid.\n**\n* This is an overload with an extra parameter for the length of topic_name.\n*\n* \\sa rmw_validate_full_topic_name(const char *, int *, size_t *)\n*\n* \\param[in] topic_name topic name to be validated\n* \\param[in] topic_name_length The number of characters in topic_name.\n* \\param[out] validation_result int in which the result of the check is stored\n* \\param[out] invalid_index size_t index of the input string where an error occurred\n* \\returns `RMW_RET_OK` on successfully running the check, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` on invalid parameters, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n*/"]
+    #[doc = " Determine if a given topic name is valid.\n**\n* This is an overload with an extra parameter for the length of topic_name.\n*\n* \\sa rmw_validate_full_topic_name(const char *, int *, size_t *)\n*\n* \\param[in] topic_name topic name to be validated\n* \\param[in] topic_name_length The number of characters in topic_name.\n* \\param[out] validation_result int in which the result of the check is stored\n* \\param[out] invalid_index size_t index of the input string where an error occurred\n* \\returns `RMW_RET_OK` on successfully running the check, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` on invalid parameters, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n*/"]
     pub fn rmw_validate_full_topic_name_with_size(
         topic_name: *const ::std::os::raw::c_char,
         topic_name_length: usize,
@@ -2931,7 +3148,7 @@ unsafe extern "C" {
     ) -> rmw_ret_t;
 }
 unsafe extern "C" {
-    #[doc = " Deterimine if a given namespace is valid.\n**\n* This is an overload with an extra parameter for the length of namespace_.\n* If a non RMW_RET_OK return value is returned, the RMW error message will be set.\n*\n* \\sa rmw_validate_namespace(const char *, int *, size_t *)\n*\n* \\param[in] namespace_ namespace to be validated\n* \\param[in] namespace_length The number of characters in namespace_.\n* \\param[out] validation_result int in which the result of the check is stored\n* \\param[out] invalid_index index of the input string where an error occurred\n* \\returns `RMW_RET_OK` on successfully running the check, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` on invalid parameters, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n*/"]
+    #[doc = " Determine if a given namespace is valid.\n**\n* This is an overload with an extra parameter for the length of namespace_.\n* If a non RMW_RET_OK return value is returned, the RMW error message will be set.\n*\n* \\sa rmw_validate_namespace(const char *, int *, size_t *)\n*\n* \\param[in] namespace_ namespace to be validated\n* \\param[in] namespace_length The number of characters in namespace_.\n* \\param[out] validation_result int in which the result of the check is stored\n* \\param[out] invalid_index index of the input string where an error occurred\n* \\returns `RMW_RET_OK` on successfully running the check, or\n* \\returns `RMW_RET_INVALID_ARGUMENT` on invalid parameters, or\n* \\returns `RMW_RET_ERROR` when an unspecified error occurs.\n*/"]
     pub fn rmw_validate_namespace_with_size(
         namespace_: *const ::std::os::raw::c_char,
         namespace_length: usize,

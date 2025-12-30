@@ -61,6 +61,7 @@ impl RemapRules {
 #[derive(Default)]
 pub struct ZContextBuilder {
     domain_id: usize,
+    enclave: String,
     config_file: Option<PathBuf>,
     config_overrides: Vec<(String, serde_json::Value)>,
     remap_rules: RemapRules,
@@ -70,6 +71,12 @@ impl ZContextBuilder {
     /// Set the ROS domain ID
     pub fn with_domain_id(mut self, domain_id: usize) -> Self {
         self.domain_id = domain_id;
+        self
+    }
+
+    /// Set the enclave name
+    pub fn with_enclave<S: Into<String>>(mut self, enclave: S) -> Self {
+        self.enclave = enclave.into();
         self
     }
 
@@ -245,10 +252,19 @@ impl Builder for ZContextBuilder {
             // Use environment variable config file
             zenoh::Config::from_file(path)?
         } else {
-            // Use default config
+            // Use default config matching rmw_zenoh_cpp DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5
+            // Connect to the Zenoh router on localhost by default
             let mut config = zenoh::Config::default();
-            // Disable multicast scouting to avoid conflicts between parallel tests
-            config.insert_json5("scouting/multicast/enabled", "false")?;
+
+            // Set mode to peer (same as rmw_zenoh_cpp line 12)
+            config.insert_json5("mode", r#""peer""#)?;
+
+            // Connect to the Zenoh router on localhost:7447 (same as rmw_zenoh_cpp lines 44-46)
+            config.insert_json5("connect/endpoints", r#"["tcp/localhost:7447"]"#)?;
+
+            // Note: multicast scouting is disabled by default (rmw_zenoh_cpp line 143)
+            // Gossip scouting is enabled by default in Zenoh
+
             config
         };
 
@@ -278,6 +294,7 @@ impl Builder for ZContextBuilder {
             session: Arc::new(session),
             counter: Arc::new(GlobalCounter::default()),
             domain_id,
+            enclave: self.enclave,
             graph,
             remap_rules: self.remap_rules,
         })
@@ -289,6 +306,7 @@ pub struct ZContext {
     // Global counter for the participants
     counter: Arc<GlobalCounter>,
     domain_id: usize,
+    enclave: String,
     graph: Arc<Graph>,
     remap_rules: RemapRules,
 }
@@ -299,6 +317,7 @@ impl ZContext {
             domain_id: self.domain_id,
             name: name.as_ref().to_owned(),
             namespace: "".to_string(),
+            enclave: self.enclave.clone(),
             session: self.session.clone(),
             counter: self.counter.clone(),
             graph: self.graph.clone(),
@@ -308,5 +327,10 @@ impl ZContext {
 
     pub fn shutdown(&self) -> Result<()> {
         self.session.close().wait()
+    }
+
+    /// Get a reference to the graph for setting up event callbacks
+    pub fn graph(&self) -> &Arc<crate::graph::Graph> {
+        &self.graph
     }
 }

@@ -39,9 +39,11 @@ fn main() {
         .allowlist_function("rmw_names_and_types_.*")
         .allowlist_function("rmw_check_zero_rmw_string_array")
         .allowlist_function("rmw_security_options_.*")
+        .allowlist_function("rmw_discovery_options_.*")
         .allowlist_function("rmw_validate_.*")
         .allowlist_function("rmw_event_fini")
         .allowlist_function("rmw_topic_endpoint_info_.*")
+        .allowlist_function("rmw_service_endpoint_info_.*")
         // Allow types and constants
         .allowlist_type("rmw_.*")
         .allowlist_type("rcutils_.*")

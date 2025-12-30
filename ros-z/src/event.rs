@@ -32,6 +32,7 @@ pub struct ZenohEventStatus {
     pub current_count_change: i32,
     pub data: String,
     pub changed: bool,
+    pub last_policy_kind: u32, // RMW QoS policy kind that caused incompatibility
 }
 
 // Event callback type
@@ -77,6 +78,10 @@ impl EventsManager {
     }
 
     pub fn update_event_status(&mut self, event_type: ZenohEventType, change: i32) {
+        self.update_event_status_with_policy(event_type, change, 0);
+    }
+
+    pub fn update_event_status_with_policy(&mut self, event_type: ZenohEventType, change: i32, policy_kind: u32) {
         let event_id = event_type as usize;
 
         {
@@ -88,6 +93,10 @@ impl EventsManager {
             status.current_count += change;
             status.current_count_change += change;
             status.changed = true;
+            // Update policy kind if provided (non-zero for QoS incompatibility events)
+            if policy_kind != 0 {
+                status.last_policy_kind = policy_kind;
+            }
         }
 
         // Trigger callback if registered
@@ -180,23 +189,32 @@ impl GraphEventManager {
     }
 
     pub fn trigger_event(&self, entity_gid: &GidArray, event_type: ZenohEventType, change: i32) {
+        self.trigger_event_with_policy(entity_gid, event_type, change, 0);
+    }
+
+    pub fn trigger_event_with_policy(&self, entity_gid: &GidArray, event_type: ZenohEventType, change: i32, policy_kind: u32) {
+        // For QoS incompatibility events, we need to pass policy_kind through a different mechanism
+        // since callbacks only take i32. We'll encode it in the change parameter's upper bits for now.
+        // This is a workaround - ideally we'd change the callback signature.
+        let encoded_change = if policy_kind != 0 && (matches!(event_type, ZenohEventType::RequestedQosIncompatible | ZenohEventType::OfferedQosIncompatible)) {
+            // Encode policy_kind in upper 16 bits, change in lower 16 bits
+            // This works because change is always small (number of incompatible entities)
+            ((policy_kind as i32) << 16) | (change & 0xFFFF)
+        } else {
+            change
+        };
+
         let callbacks = self.event_callbacks.lock().unwrap();
         if let Some(entity_callbacks) = callbacks.get(entity_gid)
             && let Some(callback) = entity_callbacks.get(&event_type) {
-                callback(change);
+                callback(encoded_change);
             }
     }
 
-    pub fn trigger_graph_change(&self, entity: &crate::entity::Entity, appeared: bool, local_zid: zenoh::session::ZenohId) {
+    pub fn trigger_graph_change(&self, entity: &crate::entity::Entity, appeared: bool, _local_zid: zenoh::session::ZenohId) {
         use crate::entity::EntityKind;
 
         let change = if appeared { 1 } else { -1 };
-
-        // Check if the entity is from the local session
-        let is_local = match entity {
-            crate::entity::Entity::Node(node) => node.z_id == local_zid,
-            crate::entity::Entity::Endpoint(endpoint) => endpoint.node.z_id == local_zid,
-        };
 
         // Trigger graph guard conditions for ALL graph changes (local and remote)
         if let Some(ref trigger) = *self.trigger_guard_condition.lock().unwrap() {
@@ -207,15 +225,9 @@ impl GraphEventManager {
             }
         }
 
-        // Don't trigger matched events for local entities
-        // Matched events are only triggered when remote entities appear/disappear
-        if is_local {
-            return;
-        }
-
         // Determine which event type based on entity kind
-        // When a remote publisher appears/disappears, local subscriptions get notified
-        // When a remote subscription appears/disappears, local publishers get notified
+        // When a publisher appears/disappears, subscriptions get SubscriptionMatched events
+        // When a subscription appears/disappears, publishers get PublicationMatched events
         let event_type = match entity {
             crate::entity::Entity::Endpoint(endpoint) => match endpoint.kind {
                 EntityKind::Publisher => ZenohEventType::SubscriptionMatched,
@@ -228,7 +240,8 @@ impl GraphEventManager {
         };
 
         // Find all entities that should be notified about this change
-        // For now, we'll need to notify all registered entities that care about this topic
+        // For now, we'll notify all registered entities that care about this topic
+        // This includes both local and remote matches
         // This is a simplified implementation - in practice, we'd need topic-based indexing
         let callbacks = self.event_callbacks.lock().unwrap();
         for (_entity_gid, entity_callbacks) in callbacks.iter() {
