@@ -220,6 +220,8 @@ impl ServiceTypeSupport {
         let type_support = unsafe {
             let ts = get_service_typesupport(type_support);
             if ts.is_null() {
+                // Clear any error state set by the C++ typesupport dispatch code
+                crate::ros::rcutils_reset_error();
                 tracing::error!("Failed to create the type support.");
                 return Err(zenoh::Error::from(std::io::Error::new(
                     std::io::ErrorKind::NotFound,

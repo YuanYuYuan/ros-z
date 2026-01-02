@@ -34,8 +34,8 @@ pub struct SubscriptionImpl {
     pub topic: CString,
     pub options: rmw_subscription_options_t,
     pub qos: rmw_qos_profile_t,
-    pub callback: std::sync::Mutex<rmw_subscription_new_message_callback_t>,
-    pub callback_user_data: std::sync::Mutex<*const crate::c_void>,
+    pub callback: std::sync::Arc<std::sync::Mutex<crate::ros::rmw_subscription_new_message_callback_t>>,
+    pub callback_user_data: std::sync::Arc<std::sync::Mutex<usize>>, // Store pointer as usize for thread safety
     pub graph: std::sync::Arc<ros_z::graph::Graph>,
     pub entity: ros_z::entity::EndpointEntity,
     pub notifier: std::sync::Arc<crate::utils::Notifier>,
@@ -101,7 +101,7 @@ impl SubscriptionImpl {
                     // Set publisher GID to zeros for now
                     // TODO: Extract proper GID from Zenoh sample
                     (*message_info).publisher_gid.data = [0u8; 16];
-                    (*message_info).publisher_gid.implementation_identifier = std::ptr::null();
+                    (*message_info).publisher_gid.implementation_identifier = crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _;
                     (*message_info).from_intra_process = false;
                 }
             }
@@ -159,7 +159,7 @@ impl SubscriptionImpl {
                     (*message_info).publication_sequence_number = 0;
                     (*message_info).reception_sequence_number = 0;
                     (*message_info).publisher_gid.data = [0u8; 16];
-                    (*message_info).publisher_gid.implementation_identifier = std::ptr::null();
+                    (*message_info).publisher_gid.implementation_identifier = crate::RMW_ZENOH_IDENTIFIER.as_ptr() as *const _;
                     (*message_info).from_intra_process = false;
                 }
             }

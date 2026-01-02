@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use zenoh::liveliness::LivelinessToken;
 use zenoh::{Result, Session, Wait, sample::{Locality, Sample}};
-use zenoh_ext::{AdvancedPublisher, CacheConfig, AdvancedPublisherBuilderExt};
+use zenoh_ext::{AdvancedPublisher, CacheConfig, AdvancedPublisherBuilderExt, AdvancedSubscriberBuilderExt, HistoryConfig, RecoveryConfig};
 
 use crate::Builder;
 use crate::attachment::{Attachment, GidArray};
@@ -390,17 +390,37 @@ where
 
         self.entity.topic = qualified_topic;
 
-        // Create Zenoh subscriber with inline callback that deserializes
-        let mut sub_builder = self
-            .session
-            .declare_subscriber(self.entity.topic_key_expr()?);
+        // Get queue size for history config
+        let queue_size = match self.entity.qos.history {
+            QosHistory::KeepLast(depth) => depth.get(),
+            QosHistory::KeepAll => 1000,
+        };
 
-        // If ignore_local_publications is true, only receive samples from remote sessions
-        if self.ignore_local_publications {
-            sub_builder = sub_builder.allowed_origin(Locality::Remote);
+        // Always use AdvancedSubscriber, configure history for TRANSIENT_LOCAL
+        let mut adv_sub_builder = self
+            .session
+            .declare_subscriber(self.entity.topic_key_expr()?)
+            .advanced();
+
+        // For TRANSIENT_LOCAL durability, configure history
+        if self.entity.qos.durability == QosDurability::TransientLocal {
+            adv_sub_builder = adv_sub_builder
+                .subscriber_detection()
+                .history(HistoryConfig::default()
+                    .detect_late_publishers()
+                    .max_samples(queue_size));
+
+            // Enable recovery for RELIABLE + TRANSIENT_LOCAL
+            if self.entity.qos.reliability == QosReliability::Reliable {
+                adv_sub_builder = adv_sub_builder.recovery(RecoveryConfig::default());
+            }
         }
 
-        let inner = sub_builder
+        if self.ignore_local_publications {
+            adv_sub_builder = adv_sub_builder.allowed_origin(Locality::Remote);
+        }
+
+        let inner = adv_sub_builder
             .callback(move |sample| {
                 dbg!();
                 let payload = sample.payload().to_bytes();
@@ -456,21 +476,33 @@ where
         let queue = Arc::new(KeepLastQueue::new(queue_size));
         let queue_clone = queue.clone();
 
-        let mut sub_builder = self
+        // Always use AdvancedSubscriber, configure history for TRANSIENT_LOCAL
+        let mut adv_sub_builder = self
             .session
-            .declare_subscriber(self.entity.topic_key_expr()?);
+            .declare_subscriber(self.entity.topic_key_expr()?)
+            .advanced();
 
-        // If ignore_local_publications is true, only receive samples from remote sessions
-        if self.ignore_local_publications {
-            sub_builder = sub_builder.allowed_origin(Locality::Remote);
+        // For TRANSIENT_LOCAL durability, configure history
+        if self.entity.qos.durability == QosDurability::TransientLocal {
+            adv_sub_builder = adv_sub_builder
+                .subscriber_detection()
+                .history(HistoryConfig::default()
+                    .detect_late_publishers()
+                    .max_samples(queue_size));
+
+            // Enable recovery for RELIABLE + TRANSIENT_LOCAL
+            if self.entity.qos.reliability == QosReliability::Reliable {
+                adv_sub_builder = adv_sub_builder.recovery(RecoveryConfig::default());
+            }
         }
 
-        let inner = sub_builder
+        if self.ignore_local_publications {
+            adv_sub_builder = adv_sub_builder.allowed_origin(Locality::Remote);
+        }
+
+        let inner = adv_sub_builder
             .callback(move |sample| {
-                let len_before = queue_clone.len();
-                queue_clone.push(sample);  // Automatic KEEP_LAST overwrite
-                let len_after = queue_clone.len();
-                eprintln!("[callback] Message received: queue {} -> {} (cap={})", len_before, len_after, queue_size);
+                queue_clone.push(sample);
                 notify();
             })
             .wait()?;
@@ -519,21 +551,33 @@ where
         let queue = Arc::new(KeepLastQueue::new(queue_size));
         let queue_clone = queue.clone();
 
-        let mut sub_builder = self
+        // Always use AdvancedSubscriber, configure history for TRANSIENT_LOCAL
+        let mut adv_sub_builder = self
             .session
-            .declare_subscriber(self.entity.topic_key_expr()?);
+            .declare_subscriber(self.entity.topic_key_expr()?)
+            .advanced();
 
-        // If ignore_local_publications is true, only receive samples from remote sessions
-        if self.ignore_local_publications {
-            sub_builder = sub_builder.allowed_origin(Locality::Remote);
+        // For TRANSIENT_LOCAL durability, configure history
+        if self.entity.qos.durability == QosDurability::TransientLocal {
+            adv_sub_builder = adv_sub_builder
+                .subscriber_detection()
+                .history(HistoryConfig::default()
+                    .detect_late_publishers()
+                    .max_samples(queue_size));
+
+            // Enable recovery for RELIABLE + TRANSIENT_LOCAL
+            if self.entity.qos.reliability == QosReliability::Reliable {
+                adv_sub_builder = adv_sub_builder.recovery(RecoveryConfig::default());
+            }
         }
 
-        let inner = sub_builder
+        if self.ignore_local_publications {
+            adv_sub_builder = adv_sub_builder.allowed_origin(Locality::Remote);
+        }
+
+        let inner = adv_sub_builder
             .callback(move |sample| {
-                let len_before = queue_clone.len();
-                queue_clone.push(sample);  // ROS KEEP_LAST overwrite
-                let len_after = queue_clone.len();
-                eprintln!("[callback] Message received: queue {} -> {} (cap={})", len_before, len_after, queue_size);
+                queue_clone.push(sample);
             })
             .wait()?;
         let gid = self.entity.gid();
@@ -556,7 +600,7 @@ where
 pub struct ZSub<T: ZMessage, Q, S: ZDeserializer> {
     pub entity: EndpointEntity,
     pub queue: Option<Arc<KeepLastQueue<Q>>>,
-    _inner: zenoh::pubsub::Subscriber<()>,
+    _inner: zenoh_ext::AdvancedSubscriber<()>,
     _lv_token: LivelinessToken,
     events_mgr: Arc<Mutex<EventsManager>>,
     _phantom_data: PhantomData<(T, S)>,

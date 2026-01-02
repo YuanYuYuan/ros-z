@@ -53,8 +53,8 @@ add_dependencies(rmw_zenoh_rs cargo_build_rmw_zenoh_rs)
 configure_rmw_library(rmw_zenoh_rs)
 
 register_rmw_implementation(
-  "c:rosidl_typesupport_c:rosidl_typesupport_fastrtps_c:rosidl_typesupport_introspection_c"
-  "cpp:rosidl_typesupport_cpp:rosidl_typesupport_fastrtps_cpp:rosidl_typesupport_introspection_cpp")
+  "c:rosidl_typesupport_fastrtps_c:rosidl_typesupport_introspection_c"
+  "cpp:rosidl_typesupport_fastrtps_cpp:rosidl_typesupport_introspection_cpp")
 
 install(
   FILES ${GENERATED_LIB_FILE}

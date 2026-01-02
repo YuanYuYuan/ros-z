@@ -5,6 +5,7 @@
 #include <rosidl_typesupport_fastrtps_c/identifier.h>
 #include <rosidl_typesupport_fastrtps_cpp/identifier.hpp>
 #include <rosidl_typesupport_interface/macros.h>
+#include <rmw/error_handling.h>
 
 namespace serde_bridge {
 
@@ -15,6 +16,8 @@ const rosidl_message_type_support_t *get_message_typesupport(const rosidl_messag
     }
     auto type_support = get_message_typesupport_handle(ts, rosidl_typesupport_fastrtps_c__identifier);
     if (!type_support) {
+        // Clear error from first attempt before trying second type support
+        rmw_reset_error();
         type_support = get_message_typesupport_handle(ts, rosidl_typesupport_fastrtps_cpp::typesupport_identifier);
     }
 
@@ -73,6 +76,8 @@ const rosidl_service_type_support_t *get_service_typesupport(const rosidl_servic
     }
     auto type_support = get_service_typesupport_handle(ts, rosidl_typesupport_fastrtps_c__identifier);
     if (!type_support) {
+        // Clear error from first attempt before trying second type support
+        rmw_reset_error();
         type_support = get_service_typesupport_handle(ts, rosidl_typesupport_fastrtps_cpp::typesupport_identifier);
     }
 

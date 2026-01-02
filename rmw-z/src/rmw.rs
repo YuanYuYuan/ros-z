@@ -40,14 +40,14 @@ fn normalize_namespace(ns: &str) -> String {
 fn rmw_event_type_to_zenoh_event(rmw_event: rmw_event_type_t) -> Option<ZenohEventType> {
     match rmw_event {
         0 => None,  // RMW_EVENT_INVALID
-        1 => None,  // RMW_EVENT_LIVELINESS_CHANGED - NOT SUPPORTED
-        2 => None,  // RMW_EVENT_REQUESTED_DEADLINE_MISSED - NOT SUPPORTED
+        1 => Some(ZenohEventType::LivelinessChanged),        // RMW_EVENT_LIVELINESS_CHANGED
+        2 => Some(ZenohEventType::RequestedDeadlineMissed),  // RMW_EVENT_REQUESTED_DEADLINE_MISSED
         3 => Some(ZenohEventType::RequestedQosIncompatible), // RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE
         4 => Some(ZenohEventType::MessageLost),              // RMW_EVENT_MESSAGE_LOST
         5 => Some(ZenohEventType::SubscriptionIncompatibleType), // RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE
         6 => Some(ZenohEventType::SubscriptionMatched),      // RMW_EVENT_SUBSCRIPTION_MATCHED
-        7 => None,  // RMW_EVENT_LIVELINESS_LOST - NOT SUPPORTED
-        8 => None,  // RMW_EVENT_OFFERED_DEADLINE_MISSED - NOT SUPPORTED
+        7 => Some(ZenohEventType::LivelinessLost),           // RMW_EVENT_LIVELINESS_LOST
+        8 => Some(ZenohEventType::OfferedDeadlineMissed),    // RMW_EVENT_OFFERED_DEADLINE_MISSED
         9 => Some(ZenohEventType::OfferedQosIncompatible),   // RMW_EVENT_OFFERED_QOS_INCOMPATIBLE
         10 => Some(ZenohEventType::PublisherIncompatibleType), // RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE
         11 => Some(ZenohEventType::PublicationMatched),      // RMW_EVENT_PUBLICATION_MATCHED
@@ -389,10 +389,28 @@ pub extern "C" fn rmw_create_subscription(
         .ignore_local_publications(ignore_local)
         .with_type_info(ts.get_type_info());  // Set type_info BEFORE build() so liveliness token has correct type
 
-    // Create notification callback that will wake up wait sets
+    // Create shared callback and user_data holders that will be populated after SubscriptionImpl is created
+    let callback_holder: std::sync::Arc<std::sync::Mutex<crate::ros::rmw_subscription_new_message_callback_t>> =
+        std::sync::Arc::new(std::sync::Mutex::new(None));
+    let user_data_holder = std::sync::Arc::new(std::sync::Mutex::new(0usize)); // Store pointer as usize for thread safety
+
+    // Create notification callback that will wake up wait sets and invoke user callback
     let notifier_clone = notifier.clone();
+    let callback_holder_clone = callback_holder.clone();
+    let user_data_holder_clone = user_data_holder.clone();
     let notify_callback = move || {
         notifier_clone.notify_all();
+        // Invoke the user callback if set
+        if let Ok(cb) = callback_holder_clone.lock() {
+            if let Some(callback_fn) = *cb {
+                if let Ok(user_data_usize) = user_data_holder_clone.lock() {
+                    unsafe {
+                        let user_data_ptr = *user_data_usize as *const std::ffi::c_void;
+                        callback_fn(user_data_ptr, 1); // 1 new message
+                    }
+                }
+            }
+        }
     };
 
     let zsub = match zsub_builder.build_with_notifier(notify_callback) {
@@ -503,8 +521,8 @@ pub extern "C" fn rmw_create_subscription(
         topic: topic_cstr.clone(),
         options: unsafe { *subscription_options },
         qos: crate::qos::normalize_rmw_qos(unsafe { &*qos_policies }),
-        callback: std::sync::Mutex::new(None),
-        callback_user_data: std::sync::Mutex::new(std::ptr::null()),
+        callback: callback_holder,
+        callback_user_data: user_data_holder,
         graph: graph.clone(),
         entity: entity.clone(),
         notifier,
@@ -611,15 +629,16 @@ pub extern "C" fn rmw_take_event(
     let event_handle = unsafe { &*(rmw_event.data as *const RmEventHandle) };
     let status = event_handle.take_event();
 
-    // Set taken to true to indicate the event was successfully retrieved
+    // Initialize taken to false
     if !taken.is_null() {
-        unsafe { *taken = true; }
+        unsafe { *taken = false; }
     }
 
     // Convert event_type to ZenohEventType to determine which structure to fill
     let zenoh_event_type = rmw_event_type_to_zenoh_event(rmw_event.event_type);
     if zenoh_event_type.is_none() {
-        return RMW_RET_INVALID_ARGUMENT as _;
+        tracing::error!("Unsupported event type: {}", rmw_event.event_type);
+        return RMW_RET_UNSUPPORTED as _;
     }
 
     // Fill the appropriate status structure based on event type
@@ -645,6 +664,13 @@ pub extern "C" fn rmw_take_event(
             unsafe {
                 (*status_ptr).total_count = status.total_count as usize;
                 (*status_ptr).total_count_change = status.total_count_change as usize;
+            }
+        }
+        ZenohEventType::SubscriptionIncompatibleType | ZenohEventType::PublisherIncompatibleType => {
+            let status_ptr = event_info as *mut rmw_incompatible_type_status_t;
+            unsafe {
+                (*status_ptr).total_count = status.total_count;
+                (*status_ptr).total_count_change = status.total_count_change;
             }
         }
         ZenohEventType::SubscriptionMatched | ZenohEventType::PublicationMatched => {
@@ -686,7 +712,11 @@ pub extern "C" fn rmw_take_event(
                 (*status_ptr).not_alive_count_change = 0;
             }
         }
-        _ => return RMW_RET_INVALID_ARGUMENT as _,
+    }
+
+    // Set taken to true to indicate the event was successfully retrieved
+    if !taken.is_null() {
+        unsafe { *taken = true; }
     }
 
     RMW_RET_OK as _
@@ -1882,7 +1912,20 @@ pub extern "C" fn rmw_subscription_set_on_new_message_callback(
         *cb = callback;
     }
     if let Ok(mut ud) = subscription_impl.callback_user_data.lock() {
-        *ud = user_data as *const c_void;
+        *ud = user_data as usize;  // Store pointer as usize for thread safety
+    }
+
+    // If there are already messages in the queue (e.g., from transient local delivery),
+    // invoke the callback immediately
+    if let Some(queue) = subscription_impl.inner.queue.as_ref() {
+        if !queue.is_empty() {
+            if let (Some(callback_fn), Some(user_data_guard)) = (callback, subscription_impl.callback_user_data.lock().ok()) {
+                unsafe {
+                    let user_data_ptr = *user_data_guard as *const std::ffi::c_void;
+                    callback_fn(user_data_ptr, queue.len());
+                }
+            }
+        }
     }
 
     RMW_RET_OK as _
