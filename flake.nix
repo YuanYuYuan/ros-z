@@ -89,6 +89,7 @@
                 rmw
                 rmw-implementation
                 rmw-zenoh-cpp
+                rmw-cyclonedds-cpp
                 ament-cmake
                 ament-cmake-gtest
                 ament-lint-auto
@@ -213,11 +214,15 @@
             packages,
             banner ? "",
             extraShellHook ? "",
+            rosEnvPath ? null,
           }:
           pkgs.mkShell {
             inherit name packages;
             shellHook = ''
               ${exportEnvVars}
+              ${if rosEnvPath != null then ''
+                export LD_LIBRARY_PATH="${rosEnvPath}/lib:$LD_LIBRARY_PATH"
+              '' else ""}
               ${extraShellHook}
               ${if banner != "" then banner else ""}
             '';
@@ -241,6 +246,7 @@
               ++ testTools
               ++ [ rosEnv.dev ]
               ++ pre-commit-check.enabledPackages;
+              rosEnvPath = rosEnv.dev;
               extraShellHook = pre-commit-check.shellHook;
               banner = ''
                 echo "🦀 ros-z development environment (with ROS)"
@@ -252,6 +258,7 @@
             ci = mkDevShell {
               name = "ros-z-ci-${rosDistro}";
               packages = commonBuildInputs ++ testTools ++ [ rosEnv.testFull ];
+              rosEnvPath = rosEnv.testFull;
             };
           };
 
