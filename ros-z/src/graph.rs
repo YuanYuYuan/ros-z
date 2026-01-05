@@ -739,7 +739,7 @@ impl Graph {
                 .filter_map(|(_, weak_entity)| weak_entity.upgrade())
                 .next()
                 .map(|entity_arc| {
-                    let enclave = match &*entity_arc {
+                    match &*entity_arc {
                         crate::entity::Entity::Node(node) => {
                             if node.enclave.is_empty() {
                                 "/".to_string()
@@ -759,8 +759,7 @@ impl Graph {
                                 enclave.clone()
                             }
                         }
-                    };
-                    enclave
+                    }
                 });
 
             if let Some(enclave) = maybe_entity_and_enclave {

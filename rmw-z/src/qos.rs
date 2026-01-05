@@ -183,7 +183,6 @@ pub fn rmw_qos_to_ros_z_qos(qos: &rmw_qos_profile_t) -> ros_z::qos::QosProfile {
     #[allow(non_upper_case_globals)]
     let liveliness = match qos.liveliness {
         rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_AUTOMATIC => QosLiveliness::Automatic,
-        rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE => QosLiveliness::ManualByNode,
         rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC => QosLiveliness::ManualByTopic,
         _ => QosLiveliness::Automatic, // Default
     };

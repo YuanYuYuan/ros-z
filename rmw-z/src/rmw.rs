@@ -828,7 +828,7 @@ pub extern "C" fn rmw_create_client(
         response_ts: service_type_support,
         callback: callback_holder,
         callback_user_data: user_data_holder,
-        notifier: notifier,
+        notifier,
         sequence_counter: std::sync::atomic::AtomicI64::new(1), // Start at 1 for ROS compatibility
         unread_count: std::sync::Arc::new(std::sync::Mutex::new(0)), // Track unread responses
         graph: node_impl.inner.graph.clone(),
