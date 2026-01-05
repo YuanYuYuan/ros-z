@@ -166,7 +166,7 @@ pub fn qualify_topic_name(
             }
         }
 
-        if namespace.is_empty() {
+        if namespace.is_empty() || namespace == "/" {
             if topic_suffix.is_empty() {
                 format!("/{}", node_name)
             } else {
