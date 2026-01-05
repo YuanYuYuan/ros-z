@@ -262,6 +262,10 @@ impl Builder for ZContextBuilder {
             // Connect to the Zenoh router on localhost:7447 (same as rmw_zenoh_cpp lines 44-46)
             config.insert_json5("connect/endpoints", r#"["tcp/localhost:7447"]"#)?;
 
+            // Enable timestamping for AdvancedPublisher with cache (TransientLocal durability)
+            // This is required for AdvancedPublisher with Sequencing::Timestamp
+            config.insert_json5("timestamping/enabled", r#"{ router: true, peer: true, client: true }"#)?;
+
             // Note: multicast scouting is disabled by default (rmw_zenoh_cpp line 143)
             // Gossip scouting is enabled by default in Zenoh
 

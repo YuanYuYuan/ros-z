@@ -288,18 +288,12 @@ where
     }
 
     pub fn publish(&self, msg: &T) -> Result<()> {
-        eprintln!("[ZPub::publish] Serializing message");
         let serialized = S::serialize(msg);
-        eprintln!("[ZPub::publish] Creating put_builder");
         let mut put_builder = self.inner.put(serialized);
         if self.with_attachment {
-            eprintln!("[ZPub::publish] Adding attachment");
             put_builder = put_builder.attachment(self.new_attchment());
         }
-        eprintln!("[ZPub::publish] Calling wait() - TESTING if it works without tokio");
-        let result = put_builder.wait();
-        eprintln!("[ZPub::publish] wait() completed: {:?}", result.is_ok());
-        result
+        put_builder.wait()
     }
 
     pub async fn async_publish(&self, msg: &T) -> Result<()> {

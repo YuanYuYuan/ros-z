@@ -36,6 +36,7 @@ pub struct SubscriptionImpl {
     pub qos: rmw_qos_profile_t,
     pub callback: std::sync::Arc<std::sync::Mutex<crate::ros::rmw_subscription_new_message_callback_t>>,
     pub callback_user_data: std::sync::Arc<std::sync::Mutex<usize>>, // Store pointer as usize for thread safety
+    pub unread_count: std::sync::Arc<std::sync::Mutex<usize>>, // Track messages arrived before callback was set
     pub graph: std::sync::Arc<ros_z::graph::Graph>,
     pub entity: ros_z::entity::EndpointEntity,
     pub notifier: std::sync::Arc<crate::utils::Notifier>,

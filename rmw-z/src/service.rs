@@ -15,11 +15,14 @@ pub struct ClientImpl {
     pub options: rmw_client_options_t,
     pub request_ts: crate::type_support::ServiceTypeSupport,
     pub response_ts: crate::type_support::ServiceTypeSupport,
-    pub callback: Mutex<rmw_client_new_response_callback_t>,
-    pub callback_user_data: Mutex<*const c_void>,
+    pub callback: std::sync::Arc<Mutex<rmw_client_new_response_callback_t>>,
+    pub callback_user_data: std::sync::Arc<Mutex<usize>>,
+    pub notifier: std::sync::Arc<crate::utils::Notifier>,
     /// Sequence counter that mirrors ZClient's internal counter
     /// Must be kept in sync with inner.sn by calling fetch_add(1) for each request
     pub sequence_counter: AtomicI64,
+    /// Tracks responses that arrived while no callback was set
+    pub unread_count: std::sync::Arc<Mutex<usize>>,
     pub graph: std::sync::Arc<ros_z::graph::Graph>,
     pub entity: ros_z::entity::EndpointEntity,
 }
@@ -33,9 +36,34 @@ impl ClientImpl {
         // This mirrors ZClient's internal sequence counter behavior
         let sn = self.sequence_counter.fetch_add(1, Ordering::AcqRel);
 
-        // Send the request using rmw_send_request (synchronous version)
-        // We don't need a notify callback for RMW
-        let _ = self.inner.rmw_send_request(&req, || {})?;
+        // Create notification callback that wakes up wait sets and invokes user callback
+        let notifier = self.notifier.clone();
+        let callback_holder = self.callback.clone();
+        let user_data_holder = self.callback_user_data.clone();
+        let unread_count_holder = self.unread_count.clone();
+        let notify_callback = move || {
+            // Wake up wait sets
+            notifier.notify_all();
+            // Invoke user callback if set, otherwise increment unread count
+            if let Ok(cb) = callback_holder.lock() {
+                if let Some(callback_fn) = *cb {
+                    if let Ok(user_data_usize) = user_data_holder.lock() {
+                        unsafe {
+                            let user_data_ptr = *user_data_usize as *const std::ffi::c_void;
+                            callback_fn(user_data_ptr, 1); // 1 new response
+                        }
+                    }
+                } else {
+                    // No callback set, increment unread count
+                    if let Ok(mut unread) = unread_count_holder.lock() {
+                        *unread += 1;
+                    }
+                }
+            }
+        };
+
+        // Send the request with notification callback
+        let _ = self.inner.rmw_send_request(&req, notify_callback)?;
 
         // Return the sequence number we tracked
         unsafe { *sequence_id = sn; }
@@ -114,8 +142,10 @@ pub struct ServiceImpl {
     pub request_ts: crate::type_support::ServiceTypeSupport,
     pub response_ts: crate::type_support::ServiceTypeSupport,
     pub qos: rmw_qos_profile_t,
-    pub callback: Mutex<rmw_service_new_request_callback_t>,
-    pub callback_user_data: Mutex<*const c_void>,
+    pub callback: std::sync::Arc<Mutex<rmw_service_new_request_callback_t>>,
+    pub callback_user_data: std::sync::Arc<Mutex<usize>>,
+    /// Tracks requests that arrived while no callback was set
+    pub unread_count: std::sync::Arc<Mutex<usize>>,
     pub graph: std::sync::Arc<ros_z::graph::Graph>,
     pub entity: ros_z::entity::EndpointEntity,
 }
@@ -131,6 +161,7 @@ impl ServiceImpl {
 
         // Try to receive a request from the raw receiver
         if let Ok(query) = self.inner.rx.try_recv() {
+
             // Get the payload bytes
             let bytes = if let Some(payload) = query.payload() {
                 payload.to_bytes().to_vec()
@@ -243,12 +274,16 @@ impl ServiceImpl {
 
 impl Waitable for ClientImpl {
     fn is_ready(&self) -> bool {
+        // Acquire fence to ensure we see the latest channel state from other threads
+        std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
         !self.inner.rx.is_empty()
     }
 }
 
 impl Waitable for ServiceImpl {
     fn is_ready(&self) -> bool {
+        // Acquire fence to ensure we see the latest channel state from other threads
+        std::sync::atomic::fence(std::sync::atomic::Ordering::Acquire);
         !self.inner.rx.is_empty()
     }
 }

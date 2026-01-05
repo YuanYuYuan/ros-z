@@ -11,7 +11,6 @@ pub const RMW_RET_NODE_NAME_NON_EXISTENT: u32 = 203;
 pub const RMW_DISCOVERY_OPTIONS_STATIC_PEERS_MAX_LENGTH: u32 = 256;
 pub const RMW_DEFAULT_DOMAIN_ID: i32 = -1;
 pub const RMW_GID_STORAGE_SIZE: u32 = 16;
-pub const RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE_DEPRECATED_MSG : & [u8 ; 145] = b"RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE is deprecated. Use RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC if manually asserted liveliness is needed.\0" ;
 pub const RMW_INET_ADDRSTRLEN: u32 = 48;
 pub const RMW_NODE_NAME_VALID: u32 = 0;
 pub const RMW_NODE_NAME_INVALID_IS_EMPTY_STRING: u32 = 1;
@@ -2298,9 +2297,6 @@ pub const rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT:
 #[doc = " The signal that establishes a Topic is alive comes from the ROS rmw layer."]
 pub const rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
     rmw_qos_liveliness_policy_e = 1;
-#[doc = " Explicitly asserting node liveliness is required in this case.\n This option is deprecated, use RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC if your application\n requires to assert liveliness manually."]
-pub const rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
-    rmw_qos_liveliness_policy_e = 2;
 #[doc = " The signal that establishes a Topic is alive is at the Topic level. Only publishing a message\n on the Topic or an explicit signal from the application to assert liveliness on the Topic\n will mark the Topic as being alive."]
 pub const rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
     rmw_qos_liveliness_policy_e = 3;

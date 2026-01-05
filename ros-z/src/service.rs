@@ -81,7 +81,13 @@ where
             .liveliness()
             .declare_token(self.entity.lv_token_key_expr()?)
             .wait()?;
-        let (tx, rx) = flume::unbounded();
+
+        // Use bounded channel based on QoS depth
+        let depth = match self.entity.qos.history {
+            crate::qos::QosHistory::KeepLast(n) => n.get(),
+            crate::qos::QosHistory::KeepAll => 1000, // Default reasonable limit for KeepAll
+        };
+        let (tx, rx) = flume::bounded(depth);
         Ok(ZClient {
             sn: AtomicUsize::new(1), // Start at 1 for ROS compatibility
             inner,
@@ -157,7 +163,10 @@ where
                 match reply.into_result() {
                     Ok(sample) => {
                         tracing::trace!("ZClient reply OK, sending to channel");
-                        tx.send(sample);
+                        // Use try_send for bounded channel - if full, drop the response (QoS depth enforcement)
+                        if tx.try_send(sample).is_err() {
+                            tracing::warn!("Client response queue full, dropping response (QoS depth enforced)");
+                        }
                     }
                     Err(e) => {
                         tracing::error!("ZClient reply error: {:?}", e);
@@ -181,19 +190,25 @@ where
             .payload(msg.serialize())
             .attachment(attachment)
             .callback(move |reply| {
+                eprintln!("🔵 [CB] got reply");
                 match reply.into_result() {
                     Ok(sample) => {
-                        tx.send(sample);
-                        notify()
+                        eprintln!("🔵 [CB] OK");
+                        // Use try_send for bounded channel - if full, drop the response (QoS depth enforcement)
+                        if tx.try_send(sample).is_err() {
+                            tracing::warn!("Client response queue full, dropping response (QoS depth enforced)");
+                        }
+                        eprintln!("🔵 [CB] notify");
+                        notify();
+                        eprintln!("🔵 [CB] done");
                     }
                     Err(err) => {
                         // Handle timeout and other reply errors gracefully
                         // This can happen when a service is not available or times out
-                        tracing::debug!("Reply error in rcl_send_request: {:?}", err);
+                        eprintln!("🔵 [CB] ERR: {:?}", err);
                     }
                 }
-            })
-            .wait()?;
+            }).wait()?;
         Ok(sn)
     }
 }
@@ -240,7 +255,12 @@ where
         let key_expr = self.entity.topic_key_expr()?;
         eprintln!("🟢 [SRV] KE: {key_expr}");
 
-        let (tx, rx) = flume::unbounded();
+        // Use bounded channel based on QoS depth
+        let depth = match self.entity.qos.history {
+            crate::qos::QosHistory::KeepLast(n) => n.get(),
+            crate::qos::QosHistory::KeepAll => 1000, // Default reasonable limit for KeepAll
+        };
+        let (tx, rx) = flume::bounded(depth);
         let inner = self
             .session
             .declare_queryable(&key_expr)
@@ -248,7 +268,10 @@ where
             .callback(move |query| {
                 tracing::error!("RECEIVED QUERY: {}", &query.key_expr());
                 tracing::error!("Selector: {}", &query.selector());
-                assert!(tx.send(query).is_ok());
+                // Use try_send for bounded channel - if full, drop the query (QoS depth enforcement)
+                if tx.try_send(query).is_err() {
+                    tracing::warn!("Service queue full, dropping query (QoS depth enforced)");
+                }
             })
             .wait()?;
         let lv_token = self
@@ -291,14 +314,25 @@ where
         let key_expr = self.entity.topic_key_expr()?;
         tracing::debug!("[SRV] KE: {key_expr}");
 
-        let (tx, rx) = flume::unbounded();
+        // Use bounded channel based on QoS depth
+        let depth = match self.entity.qos.history {
+            crate::qos::QosHistory::KeepLast(n) => n.get(),
+            crate::qos::QosHistory::KeepAll => 1000, // Default reasonable limit for KeepAll
+        };
+        let (tx, rx) = flume::bounded(depth);
         let inner = self
             .session
             .declare_queryable(&key_expr)
             .complete(true)
             .callback(move |query| {
-                let _ = tx.send(query);
+                eprintln!("🟢 [SRV CB]");
+                // Use try_send for bounded channel - if full, drop the query (QoS depth enforcement)
+                if tx.try_send(query).is_err() {
+                    tracing::warn!("Service queue full, dropping query (QoS depth enforced)");
+                }
+                eprintln!("🟢 [SRV CB] notify");
                 notify();
+                eprintln!("🟢 [SRV CB] done");
             })
             .wait()?;
         let lv_token = self

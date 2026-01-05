@@ -1,5 +1,6 @@
 #[cfg(all(feature = "external_msgs", has_action_tutorials_interfaces))]
 use std::time::Duration;
+
 #[cfg(all(feature = "external_msgs", has_action_tutorials_interfaces))]
 use ros_z::{Builder, Result, action::server::ExecutingGoal, context::ZContext};
 #[cfg(all(feature = "external_msgs", has_action_tutorials_interfaces))]
@@ -79,7 +80,11 @@ pub async fn run_fibonacci_action_server(ctx: ZContext, timeout: Option<Duration
 }
 
 // Only compile main when building as a binary (not when included as a module)
-#[cfg(all(not(any(test, doctest)), feature = "external_msgs", has_action_tutorials_interfaces))]
+#[cfg(all(
+    not(any(test, doctest)),
+    feature = "external_msgs",
+    has_action_tutorials_interfaces
+))]
 fn main() -> Result<()> {
     use ros_z::context::ZContextBuilder;
 
@@ -105,7 +110,10 @@ fn main() -> Result<()> {
 }
 
 // Stub main when action_tutorials_interfaces is not available
-#[cfg(all(not(any(test, doctest)), not(all(feature = "external_msgs", has_action_tutorials_interfaces))))]
+#[cfg(all(
+    not(any(test, doctest)),
+    not(all(feature = "external_msgs", has_action_tutorials_interfaces))
+))]
 fn main() {
     eprintln!("Error: This example requires the action_tutorials_interfaces ROS 2 package.");
     eprintln!("Please install it or ensure your ROS 2 environment is properly set up.");

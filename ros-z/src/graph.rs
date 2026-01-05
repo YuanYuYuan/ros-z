@@ -696,23 +696,24 @@ impl Graph {
         }
 
         // Extract all nodes from by_node HashMap
-        // For each NodeKey, iterate through the Slab to return one entry per node entity
+        // Return one entry per unique node (namespace, name combination)
         // Denormalize namespace: empty string becomes "/"
         let mut result = Vec::new();
         for ((namespace, name), slab) in data.by_node.iter() {
-            let denormalized_ns = if namespace.is_empty() {
-                "/".to_string()
-            } else if !namespace.starts_with('/') {
-                format!("/{}", namespace)
-            } else {
-                namespace.clone()
-            };
+            // Check if this node has any live entities
+            let has_live_entities = slab.iter().any(|(_, weak_entity)| weak_entity.upgrade().is_some());
 
-            // Add one entry for each valid (non-dropped) entity in the slab
-            for (_, weak_entity) in slab.iter() {
-                if weak_entity.upgrade().is_some() {
-                    result.push((name.clone(), denormalized_ns.clone()));
-                }
+            if has_live_entities {
+                let denormalized_ns = if namespace.is_empty() {
+                    "/".to_string()
+                } else if !namespace.starts_with('/') {
+                    format!("/{}", namespace)
+                } else {
+                    namespace.clone()
+                };
+
+                // Add only ONE entry per node, not one per entity
+                result.push((name.clone(), denormalized_ns));
             }
         }
         result
@@ -729,21 +730,15 @@ impl Graph {
         }
 
         // Extract all nodes from by_node HashMap
-        // For each NodeKey, iterate through the Slab to return one entry per node entity
+        // Return one entry per unique node (namespace, name combination)
         // Denormalize namespace: empty string becomes "/"
         let mut result = Vec::new();
         for ((namespace, name), slab) in data.by_node.iter() {
-            let denormalized_ns = if namespace.is_empty() {
-                "/".to_string()
-            } else if !namespace.starts_with('/') {
-                format!("/{}", namespace)
-            } else {
-                namespace.clone()
-            };
-
-            // Add one entry for each valid (non-dropped) entity in the slab
-            for (_, weak_entity) in slab.iter() {
-                if let Some(entity_arc) = weak_entity.upgrade() {
+            // Find first live entity to get enclave
+            let maybe_entity_and_enclave = slab.iter()
+                .filter_map(|(_, weak_entity)| weak_entity.upgrade())
+                .next()
+                .map(|entity_arc| {
                     let enclave = match &*entity_arc {
                         crate::entity::Entity::Node(node) => {
                             if node.enclave.is_empty() {
@@ -765,8 +760,20 @@ impl Graph {
                             }
                         }
                     };
-                    result.push((name.clone(), denormalized_ns.clone(), enclave));
-                }
+                    enclave
+                });
+
+            if let Some(enclave) = maybe_entity_and_enclave {
+                let denormalized_ns = if namespace.is_empty() {
+                    "/".to_string()
+                } else if !namespace.starts_with('/') {
+                    format!("/{}", namespace)
+                } else {
+                    namespace.clone()
+                };
+
+                // Add only ONE entry per node, not one per entity
+                result.push((name.clone(), denormalized_ns, enclave));
             }
         }
         result

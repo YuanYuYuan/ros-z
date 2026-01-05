@@ -124,7 +124,9 @@ pub fn ros_z_qos_to_rmw_qos(qos: &ros_z::qos::QosProfile) -> rmw_qos_profile_t {
     #[allow(non_upper_case_globals)]
     let liveliness = match qos.liveliness {
         QosLiveliness::Automatic => rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_AUTOMATIC,
-        QosLiveliness::ManualByNode => rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE,
+        // MANUAL_BY_NODE has been deprecated in ROS 2 and removed from RMW.
+        // Map it to MANUAL_BY_TOPIC as recommended by the deprecation message.
+        QosLiveliness::ManualByNode => rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC,
         QosLiveliness::ManualByTopic => rmw_qos_liveliness_policy_e_RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC,
     };
 
@@ -225,23 +227,12 @@ pub extern "C" fn rmw_qos_profile_check_compatible(
     if !reason.is_null() && reason_size > 0 {
         unsafe { *reason = 0; }
     }
-    // Check reliability compatibility
-    // A RELIABLE subscriber cannot be matched with a BEST_EFFORT publisher
-    if publisher_profile.reliability == rmw_qos_reliability_policy_e_RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT
-        && subscription_profile.reliability == rmw_qos_reliability_policy_e_RMW_QOS_POLICY_RELIABILITY_RELIABLE {
-        unsafe { *compatibility = rmw_qos_compatibility_type_t::RMW_QOS_COMPATIBILITY_ERROR; }
-        return RMW_RET_OK as _;
-    }
 
-    // Check durability compatibility
-    // A TRANSIENT_LOCAL subscriber cannot be matched with a VOLATILE publisher
-    if publisher_profile.durability == rmw_qos_durability_policy_e_RMW_QOS_POLICY_DURABILITY_VOLATILE
-        && subscription_profile.durability == rmw_qos_durability_policy_e_RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL {
-        unsafe { *compatibility = rmw_qos_compatibility_type_t::RMW_QOS_COMPATIBILITY_ERROR; }
-        return RMW_RET_OK as _;
-    }
-
-    // Check for warning conditions (opposite direction)
+    // In Zenoh, there are no QoS incompatibilities.
+    // The one scenario where transport may not occur is where a publisher with
+    // TRANSIENT_LOCAL durability publishes a message before a subscription with
+    // VOLATILE durability spins up. However, any subsequent messages published
+    // will be received by the subscription.
     if publisher_profile.durability == rmw_qos_durability_policy_e_RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL
         && subscription_profile.durability == rmw_qos_durability_policy_e_RMW_QOS_POLICY_DURABILITY_VOLATILE {
         unsafe { *compatibility = rmw_qos_compatibility_type_t::RMW_QOS_COMPATIBILITY_WARNING; }

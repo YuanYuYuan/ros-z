@@ -284,88 +284,72 @@ pub extern "C" fn rmw_wait(
     let ready = wait_set_impl.wait(&timeout);
 
     if ready {
-        // Update arrays to only contain ready entities
+        // Update arrays - NULL items in place (do NOT compact!)
+        // RCL relies on array indices matching
         if !subscriptions.is_null() {
             let sub_array = unsafe { &mut *subscriptions };
-            let mut ready_count = 0;
             for i in 0..sub_array.subscriber_count {
                 let sub_impl_ptr = unsafe { *sub_array.subscribers.add(i) as *mut rmw_subscription_impl_t };
                 if !sub_impl_ptr.is_null() {
                     unsafe {
                         let sub_impl = &*(sub_impl_ptr as *const _ as *const crate::pubsub::SubscriptionImpl);
-                        if sub_impl.is_ready() {
-                            *sub_array.subscribers.add(ready_count) = sub_impl_ptr as *mut _;
-                            ready_count += 1;
+                        if !sub_impl.is_ready() {
+                            // Not ready - NULL in place
+                            *sub_array.subscribers.add(i) = std::ptr::null_mut();
                         }
                     }
                 }
             }
-            // Null out the rest
-            for i in ready_count..sub_array.subscriber_count {
-                unsafe {
-                    *sub_array.subscribers.add(i) = std::ptr::null_mut();
-                }
-            }
         }
 
-        // Similar for services
+        // Similar for services - NULL in place
         if !services.is_null() {
             let srv_array = unsafe { &mut *services };
-            let mut ready_count = 0;
             for i in 0..srv_array.service_count {
                 let srv_impl_ptr = unsafe { *srv_array.services.add(i) as *mut rmw_service_impl_t };
                 if !srv_impl_ptr.is_null() {
                     unsafe {
                         let srv_impl = &*(srv_impl_ptr as *const _ as *const crate::service::ServiceImpl);
-                        if srv_impl.is_ready() {
-                            *srv_array.services.add(ready_count) = srv_impl_ptr as *mut _;
-                            ready_count += 1;
+                        if !srv_impl.is_ready() {
+                            *srv_array.services.add(i) = std::ptr::null_mut();
                         }
                     }
                 }
             }
-            for i in ready_count..srv_array.service_count {
-                unsafe {
-                    *srv_array.services.add(i) = std::ptr::null_mut();
-                }
-            }
         }
 
-        // Similar for clients
+        // Similar for clients - NULL in place
         if !clients.is_null() {
             let cli_array = unsafe { &mut *clients };
-            let mut ready_count = 0;
             for i in 0..cli_array.client_count {
                 let cli_impl_ptr = unsafe { *cli_array.clients.add(i) as *mut rmw_client_impl_t };
                 if !cli_impl_ptr.is_null() {
                     unsafe {
                         let cli_impl = &*(cli_impl_ptr as *const _ as *const crate::service::ClientImpl);
-                        if cli_impl.is_ready() {
-                            *cli_array.clients.add(ready_count) = cli_impl_ptr as *mut _;
-                            ready_count += 1;
+                        if !cli_impl.is_ready() {
+                            *cli_array.clients.add(i) = std::ptr::null_mut();
                         }
                     }
-                }
-            }
-            for i in ready_count..cli_array.client_count {
-                unsafe {
-                    *cli_array.clients.add(i) = std::ptr::null_mut();
                 }
             }
         }
 
         // Similar for guard conditions
+        // IMPORTANT: NULL items in place, do NOT compact the array!
+        // RCL relies on array indices matching between calls to rcl_wait_set_add_* and rmw_wait results
         if !guard_conditions.is_null() {
             let gc_array = unsafe { &mut *guard_conditions };
-            let mut ready_count = 0;
+            tracing::debug!("[rmw_wait] Checking {} guard conditions", gc_array.guard_condition_count);
             for i in 0..gc_array.guard_condition_count {
                 let gc_impl_ptr = unsafe { *gc_array.guard_conditions.add(i) as *mut rmw_guard_condition_impl_t };
                 if !gc_impl_ptr.is_null() {
                     unsafe {
                         let gc_impl = &mut *(gc_impl_ptr as *mut crate::guard_condition::GuardConditionImpl);
-                        if gc_impl.is_ready() {
-                            *gc_array.guard_conditions.add(ready_count) = gc_impl_ptr as *mut _;
-                            ready_count += 1;
+                        tracing::debug!("[rmw_wait] GC {}: is_ready={}", i, gc_impl.is_ready());
+                        if !gc_impl.is_ready() {
+                            // Not ready - set to NULL in place
+                            *gc_array.guard_conditions.add(i) = std::ptr::null_mut();
+                        } else {
                             // Reset the guard condition after it's been detected as ready
                             // This prevents it from staying triggered forever
                             gc_impl.reset();
@@ -373,37 +357,28 @@ pub extern "C" fn rmw_wait(
                     }
                 }
             }
-            for i in ready_count..gc_array.guard_condition_count {
-                unsafe {
-                    *gc_array.guard_conditions.add(i) = std::ptr::null_mut();
-                }
-            }
         }
 
-        // Similar for events
+        // Similar for events - NULL in place
         if !events.is_null() {
             let event_array = unsafe { &mut *events };
-            let mut ready_count = 0;
             for i in 0..event_array.event_count {
                 let event_ptr = unsafe { *event_array.events.add(i) as *mut rmw_event_t };
                 if !event_ptr.is_null() {
                     unsafe {
                         let event = &*event_ptr;
                         // Check if event data is ready
-                        if !event.data.is_null() {
+                        let is_ready = if !event.data.is_null() {
                             let event_handle = &*(event.data as *const ros_z::event::RmEventHandle);
-                            if event_handle.is_ready() {
-                                *event_array.events.add(ready_count) = event_ptr as *mut _;
-                                ready_count += 1;
-                            }
+                            event_handle.is_ready()
+                        } else {
+                            false
+                        };
+
+                        if !is_ready {
+                            *event_array.events.add(i) = std::ptr::null_mut();
                         }
                     }
-                }
-            }
-            // Null out the rest
-            for i in ready_count..event_array.event_count {
-                unsafe {
-                    *event_array.events.add(i) = std::ptr::null_mut();
                 }
             }
         }

@@ -21,9 +21,14 @@
 //!    - Missing timestamping configuration for TransientLocal QoS with cache
 //!    - Added shared memory transport for efficient intra-process communication
 
-use std::sync::{Arc, atomic::{AtomicU32, Ordering}};
-use std::time::Duration;
-use std::num::NonZeroUsize;
+use std::{
+    num::NonZeroUsize,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
+    time::Duration,
+};
 
 use ros_z::{
     Builder, Result,
@@ -91,7 +96,10 @@ mod tests {
             })?;
 
         // Now create publisher
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
 
         // Wait for discovery
         tokio::time::sleep(Duration::from_millis(2000)).await;
@@ -131,7 +139,10 @@ mod tests {
         );
 
         // Create publisher with Volatile + BestEffort QoS
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
 
         // Create subscriber with matching QoS
         let received_count = Arc::new(AtomicU32::new(0));
@@ -161,7 +172,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         let count = received_count.load(Ordering::SeqCst);
-        assert!(count >= 4, "Expected at least 4 messages (best effort), got {}", count);
+        assert!(
+            count >= 4,
+            "Expected at least 4 messages (best effort), got {}",
+            count
+        );
 
         Ok(())
     }
@@ -194,7 +209,10 @@ mod tests {
             })?;
 
         // Now create publisher with TransientLocal + Reliable QoS
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
 
         // Wait for discovery
         tokio::time::sleep(Duration::from_millis(2000)).await;
@@ -214,7 +232,11 @@ mod tests {
 
         let count = received_count.load(Ordering::SeqCst);
         // With TransientLocal across contexts, we expect all messages published after subscriber exists
-        assert!(count >= 5, "Expected at least 5 messages with TransientLocal, got {}", count);
+        assert!(
+            count >= 5,
+            "Expected at least 5 messages with TransientLocal, got {}",
+            count
+        );
 
         Ok(())
     }
@@ -234,7 +256,10 @@ mod tests {
         );
 
         // Create publisher with TransientLocal + BestEffort QoS
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
 
         // Create subscriber with matching QoS
         let received_count = Arc::new(AtomicU32::new(0));
@@ -295,7 +320,10 @@ mod tests {
             })?;
 
         // Create publisher with KeepAll history
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
 
         // Wait for discovery
         tokio::time::sleep(Duration::from_millis(2000)).await;
@@ -313,7 +341,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1000)).await;
 
         let count = received_count.load(Ordering::SeqCst);
-        assert!(count >= 10, "Expected all 10 messages with KeepAll, got {}", count);
+        assert!(
+            count >= 10,
+            "Expected all 10 messages with KeepAll, got {}",
+            count
+        );
 
         Ok(())
     }
@@ -348,7 +380,10 @@ mod tests {
             })?;
 
         // Now create publisher
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
 
         // Wait for discovery
         tokio::time::sleep(Duration::from_millis(2000)).await;
@@ -367,7 +402,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(2000)).await;
 
         let count = received_count.load(Ordering::SeqCst);
-        assert!(count >= 5, "Expected at least 5 messages with async_publish, got {}", count);
+        assert!(
+            count >= 5,
+            "Expected at least 5 messages with async_publish, got {}",
+            count
+        );
 
         Ok(())
     }
@@ -401,7 +440,10 @@ mod tests {
             })?;
 
         // Create publisher
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
 
         // Wait for discovery
         tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -419,7 +461,11 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1000)).await;
 
         let count = received_count.load(Ordering::SeqCst);
-        assert!(count >= 5, "Expected at least 5 messages with TransientLocal same context, got {}", count);
+        assert!(
+            count >= 5,
+            "Expected at least 5 messages with TransientLocal same context, got {}",
+            count
+        );
 
         Ok(())
     }
@@ -432,7 +478,7 @@ mod tests {
 
         let topic = "/test_minimal";
         let qos = create_qos(
-            QosDurability::Volatile,  // Uses AdvancedPublisher
+            QosDurability::Volatile, // Uses AdvancedPublisher
             QosReliability::Reliable,
             QosHistory::KeepLast(NonZeroUsize::new(1).unwrap()),
         );
@@ -451,10 +497,9 @@ mod tests {
         // Use a timeout to detect the hang
         let publish_result = tokio::time::timeout(
             Duration::from_secs(5),
-            tokio::task::spawn_blocking(move || {
-                pub_handle.publish(&msg)
-            })
-        ).await;
+            tokio::task::spawn_blocking(move || pub_handle.publish(&msg)),
+        )
+        .await;
 
         match publish_result {
             Ok(Ok(Ok(_))) => {
@@ -468,7 +513,9 @@ mod tests {
                 panic!("Task join failed: {:?}", e);
             }
             Err(_) => {
-                panic!("HANG DETECTED: Publish timed out after 5 seconds - AdvancedPublisher.wait() is blocking!");
+                panic!(
+                    "HANG DETECTED: Publish timed out after 5 seconds - AdvancedPublisher.wait() is blocking!"
+                );
             }
         }
     }
@@ -477,8 +524,10 @@ mod tests {
     /// This mimics the RCL C context - pure synchronous, no async runtime
     #[test]
     fn test_sync_advanced_publisher_no_runtime() -> Result<()> {
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicU32, Ordering},
+        };
 
         println!("=== SYNC TEST: Creating context and nodes (no tokio runtime) ===");
         let ctx1 = ros_z::context::ZContextBuilder::default().build()?;
@@ -488,7 +537,7 @@ mod tests {
 
         let topic = "/test_sync_publish";
         let qos = create_qos(
-            QosDurability::Volatile,  // Uses AdvancedPublisher
+            QosDurability::Volatile, // Uses AdvancedPublisher
             QosReliability::BestEffort,
             QosHistory::KeepLast(NonZeroUsize::new(10).unwrap()),
         );
@@ -507,7 +556,10 @@ mod tests {
 
         // Create publisher
         println!("Creating publisher...");
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
         println!("Publisher created successfully");
 
         // Wait for discovery (synchronous sleep)
@@ -545,8 +597,10 @@ mod tests {
     /// RCL test uses one context for both pub and sub
     #[test]
     fn test_sync_publish_same_context() -> Result<()> {
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicU32, Ordering},
+        };
 
         println!("=== SYNC TEST WITH SAME CONTEXT (like RCL single process) ===");
         let ctx = ros_z::context::ZContextBuilder::default().build()?;
@@ -562,7 +616,10 @@ mod tests {
 
         // Create publisher first (like RCL test)
         println!("Creating publisher...");
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
 
         // Create subscriber
         println!("Creating subscriber...");
@@ -611,8 +668,10 @@ mod tests {
     /// This should reproduce the hang if it's caused by these QoS settings
     #[test]
     fn test_sync_publish_with_deadline_liveliness() -> Result<()> {
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicU32, Ordering},
+        };
 
         println!("=== SYNC TEST WITH DEADLINE + LIVELINESS (exact RCL settings) ===");
         let ctx1 = ros_z::context::ZContextBuilder::default().build()?;
@@ -624,13 +683,13 @@ mod tests {
 
         // EXACT same QoS as RCL test_events.cpp default_qos_profile
         let qos = QosProfile {
-            durability: QosDurability::Volatile,  // SYSTEM_DEFAULT maps to Volatile
+            durability: QosDurability::Volatile, // SYSTEM_DEFAULT maps to Volatile
             reliability: QosReliability::BestEffort,
             history: QosHistory::KeepLast(NonZeroUsize::new(10).unwrap()),
             // These are the critical settings from RCL:
             liveliness: ros_z::qos::QosLiveliness::ManualByTopic,
-            liveliness_lease_duration: ros_z::qos::Duration { sec: 1, nsec: 0 },  // 1 second
-            deadline: ros_z::qos::Duration { sec: 2, nsec: 0 },  // 2 seconds
+            liveliness_lease_duration: ros_z::qos::Duration { sec: 1, nsec: 0 }, // 1 second
+            deadline: ros_z::qos::Duration { sec: 2, nsec: 0 },                  // 2 seconds
             ..Default::default()
         };
 
@@ -646,7 +705,10 @@ mod tests {
             })?;
 
         println!("Creating publisher...");
-        let pub_handle = pub_node.create_pub::<RosString>(topic).with_qos(qos).build()?;
+        let pub_handle = pub_node
+            .create_pub::<RosString>(topic)
+            .with_qos(qos)
+            .build()?;
 
         println!("Waiting for discovery...");
         std::thread::sleep(Duration::from_millis(1000));
@@ -668,7 +730,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(1000));
 
         let count = received_count.load(Ordering::SeqCst);
-        println!("DEADLINE/LIVELINESS TEST RESULT: Received {} messages", count);
+        println!(
+            "DEADLINE/LIVELINESS TEST RESULT: Received {} messages",
+            count
+        );
 
         assert!(count >= 2, "Expected at least 2 messages, got {}", count);
 
