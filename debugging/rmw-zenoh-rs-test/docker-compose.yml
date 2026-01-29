@@ -1,0 +1,20 @@
+services:
+  rmw-zenoh-rs-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rmw-zenoh-rs-test
+    working_dir: /workspace
+    volumes:
+      - ../../:/workspace/ros-z:ro
+      - /home/circle/Workings/ZettaScale/project/nix-ros/ws/src/rclcpp:/workspace/rclcpp:ro
+      - /home/circle/Workings/ZettaScale/project/nix-ros/ws/src/rcl:/workspace/rcl:ro
+      - /home/circle/Workings/ZettaScale/project/nix-ros/ws/src/system_tests:/workspace/system_tests:ro
+      - ./test-results:/workspace/test-results
+      - ./test-rcl-excluded.sh:/workspace/test-rcl-excluded.sh:ro
+      - ./test-system-tests.sh:/workspace/test-system-tests.sh:ro
+      - ./test-system-tests-build.sh:/workspace/test-system-tests-build.sh:ro
+    environment:
+      - RMW_IMPLEMENTATION=rmw_zenoh_rs
+    tty: true
+    stdin_open: true

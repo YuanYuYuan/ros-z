@@ -1,0 +1,306 @@
+[0.100s] WARNING:colcon.colcon_cmake.test_result.ctest:Skipping 'build/test_communication/Testing/TAG': could not find latest XML file 'build/test_communication/Testing/20260129-0630/Test.xml'
+build/test_communication/test_results/test_communication/test_action_client_server__rclcpp__rclpy__rmw_fastrtps_cpp.xunit.xml: 4 tests, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_action_client_server__rclpy__rclcpp__rmw_fastrtps_cpp.xunit.xml: 4 tests, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_action_client_server__rclpy__rmw_fastrtps_cpp.xunit.xml: 4 tests, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_messages_c__rmw_fastrtps_cpp.gtest.xml: 11 tests, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_nested_types__rmw_fastrtps_cpp.xml: 1 test, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_publisher_subscriber__rclcpp__rclpy__rmw_fastrtps_cpp.xunit.xml: 26 tests, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_publisher_subscriber__rclcpp__rmw_fastrtps_cpp.xunit.xml: 1 test, 1 error, 0 failures, 0 skipped
+- test_communication test_publisher_subscriber__rclcpp__rmw_fastrtps_cpp.xunit.missing_result
+  <<< error message
+    The test did not generate a result file.
+  >>>
+build/test_communication/test_results/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp.xunit.xml: 26 tests, 13 errors, 13 failures, 0 skipped
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[Arrays]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd5767b99a0>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[Arrays]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-1 daemon stop, test_publisher-2 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py Arrays /test_time_06_30_49
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[BasicTypes]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd5767fa1b0>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[BasicTypes]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-4 daemon stop, test_publisher-5 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py BasicTypes /test_time_06_31_00
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[BoundedPlainSequences]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd575e85b50>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[BoundedPlainSequences]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-7 daemon stop, test_publisher-8 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py BoundedPlainSequences /test_time_06_31_10
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[BoundedSequences]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd576ae8bc0>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[BoundedSequences]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-10 daemon stop, test_publisher-11 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py BoundedSequences /test_time_06_31_21
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[Builtins]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd575eb3260>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[Builtins]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-13 daemon stop, test_publisher-14 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py Builtins /test_time_06_31_31
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[Constants]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd575edcf20>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[Constants]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-16 daemon stop, test_publisher-17 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py Constants /test_time_06_31_42
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[Defaults]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd575ef3110>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[Defaults]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-19 daemon stop, test_publisher-20 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py Defaults /test_time_06_31_52
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[Empty]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd575d19220>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[Empty]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-22 daemon stop, test_publisher-23 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py Empty /test_time_06_32_03
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[MultiNested]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd576c6fc80>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[MultiNested]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-25 daemon stop, test_publisher-26 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py MultiNested /test_time_06_32_13
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[Nested]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd575d55340>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[Nested]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-28 daemon stop, test_publisher-29 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py Nested /test_time_06_32_24
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[Strings]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd575d71430>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[Strings]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-31 daemon stop, test_publisher-32 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py Strings /test_time_06_32_34
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[UnboundedSequences]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd575d89880>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[UnboundedSequences]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-34 daemon stop, test_publisher-35 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py UnboundedSequences /test_time_06_32_45
+  >>>
+- test_communication.TestPublisherSubscriber test_subscriber_terminates_in_a_finite_amount_of_time[WStrings]
+  <<< failure message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 69, in test_subscriber_terminates_in_a_finite_amount_of_time
+        proc_info.assertWaitForShutdown(process=subscriber_process, timeout=10)
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/proc_info_handler.py", line 141, in assertWaitForShutdown
+        assert success, "Timed out waiting for process '{}' to finish".format(process)
+               ^^^^^^^
+    AssertionError: Timed out waiting for process '<launch.actions.execute_process.ExecuteProcess object at 0x7fd575dae390>' to finish
+  >>>
+- test_communication.TestPublisherSubscriberAfterShutdown test_processes_finished_gracefully[WStrings]
+  <<< error message
+    Traceback (most recent call last):
+      File "/workspace/ws/build/test_communication/test_publisher_subscriber__rclpy__rclcpp__rmw_fastrtps_cpp_.py", line 77, in test_processes_finished_gracefully
+        launch_testing.asserts.assertExitCodes(
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/asserts/assert_exit_codes.py", line 54, in assertExitCodes
+        to_check = resolveProcesses(
+                   ^^^^^^^^^^^^^^^^^
+      File "/opt/ros/jazzy/lib/python3.12/site-packages/launch_testing/util/proc_lookup.py", line 135, in resolveProcesses
+        raise NoMatchingProcessException(
+    launch_testing.util.proc_lookup.NoMatchingProcessException: Did not find any processes matching name 'test_subscriber' and args 'None'. Procs: daemon-stop-37 daemon stop, test_publisher-38 /workspace/ws/src/system_tests/test_communication/test/publisher_py.py WStrings /test_time_06_32_55
+  >>>
+build/test_communication/test_results/test_communication/test_publisher_subscriber__rclpy__rmw_fastrtps_cpp.xunit.xml: 26 tests, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_requester_replier__rclcpp__rclpy__rmw_fastrtps_cpp.xunit.xml: 6 tests, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_requester_replier__rclpy__rclcpp__rmw_fastrtps_cpp.xunit.xml: 6 tests, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_requester_replier__rclpy__rmw_fastrtps_cpp.xunit.xml: 6 tests, 0 errors, 0 failures, 0 skipped
+build/test_communication/test_results/test_communication/test_subscription_valid_data_cpp__rmw_fastrtps_cpp.xml: 1 test, 0 errors, 0 failures, 0 skipped
+
+Summary: 122 tests, 14 errors, 13 failures, 0 skipped

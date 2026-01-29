@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  rmw-zenoh-test:
+    image: ros:jazzy-ros-base
+    container_name: rmw-zenoh-cpp-test
+    working_dir: /workspace
+    volumes:
+      - ./test-results:/workspace/test-results
+      - ./run-tests.sh:/workspace/run-tests.sh:ro
+    command: /bin/bash -c "sleep infinity"
+    environment:
+      - RMW_IMPLEMENTATION=rmw_zenoh_cpp
+    # Keep container running for interactive testing
+    tty: true
+    stdin_open: true
