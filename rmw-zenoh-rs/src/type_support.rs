@@ -133,10 +133,9 @@ impl MessageTypeSupport {
     }
 
     pub unsafe fn serialize_message(&self, ros_message: *const c_void) -> Vec<u8> {
-        // Get the serialized size and add extra buffer for safety
+        // Get the serialized size (includes 4-byte CDR encapsulation header)
         let size = unsafe { self.get_serialized_size(ros_message) };
-        // Add significant extra buffer to account for potential alignment, padding, and string overhead
-        // For string messages, we need more space than get_serialized_size might report
+        // Add extra buffer to account for potential alignment and padding
         let buffer_size = (size + 256).max(512);
         let mut out = vec![0u8; buffer_size];
         let res = unsafe { serialize_message(self.as_ref(), ros_message, &mut out) };
@@ -144,6 +143,8 @@ impl MessageTypeSupport {
             tracing::warn!("Failed to run serialize_message");
             vec![]
         } else {
+            // Truncate to actual serialized size
+            out.truncate(size);
             out
         }
     }

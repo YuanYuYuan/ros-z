@@ -27,108 +27,151 @@ impl WaitSetImpl {
     pub fn wait(&self, timeout: &rmw_time_t) -> bool {
         use std::time::Duration;
 
+        tracing::debug!("[WAIT] wait() called with timeout: {}s {}ns", timeout.sec, timeout.nsec);
+
         // If timeout is zero, check ready immediately and return
         if timeout.sec == 0 && timeout.nsec == 0 {
-            return self.check_ready();
+            let ready = self.check_ready();
+            tracing::debug!("[WAIT] Zero timeout, check_ready returned: {}", ready);
+            return ready;
         }
 
         // Calculate timeout duration
         let timeout_duration = if timeout.sec == u64::MAX {
+            tracing::debug!("[WAIT] Infinite timeout");
             None // Infinite wait
         } else {
-            Some(Duration::from_secs(timeout.sec) + Duration::from_nanos(timeout.nsec))
+            let dur = Duration::from_secs(timeout.sec) + Duration::from_nanos(timeout.nsec);
+            tracing::debug!("[WAIT] Finite timeout: {:?}", dur);
+            Some(dur)
         };
 
-        // Use the notifier's condition variable for efficient waiting
-        let mut mutex_guard = self.notifier.mutex.lock();
+        // CRITICAL: Check if anything is already ready BEFORE waiting
+        // This handles the case where trigger() happened before wait()
+        let already_ready = self.check_ready();
+        tracing::debug!("[WAIT] Pre-wait check_ready: {}", already_ready);
+        if already_ready {
+            tracing::debug!("[WAIT] Already ready, returning immediately");
+            return true;
+        }
 
-        // Always wait (at least try to) - this prevents busy loops when data is already present
-        // We'll check ready status after waiting or timing out
+        // Use the notifier's condition variable for efficient waiting
+        tracing::debug!("[WAIT] Acquiring mutex lock...");
+        let mut mutex_guard = self.notifier.mutex.lock();
+        tracing::debug!("[WAIT] Mutex locked, entering wait loop");
+
+        // Now wait for notification
         loop {
             if let Some(dur) = timeout_duration {
+                tracing::debug!("[WAIT] Calling wait_for({:?})", dur);
                 let wait_result = self.notifier.cv.wait_for(&mut mutex_guard, dur);
+                tracing::debug!("[WAIT] wait_for returned, timed_out: {}", wait_result.timed_out());
 
                 // After wait (notification or timeout), check if anything is ready
                 let is_ready = self.check_ready();
+                tracing::debug!("[WAIT] Post-wait check_ready: {}", is_ready);
 
                 if is_ready {
+                    tracing::debug!("[WAIT] Ready after wait, returning true");
                     return true;
                 }
 
                 // Nothing ready
                 if wait_result.timed_out() {
+                    tracing::debug!("[WAIT] Timed out, returning false");
                     return false;
                 }
 
+                tracing::debug!("[WAIT] Spurious wakeup, looping...");
                 // Spurious wakeup - nothing ready yet, loop and wait again
             } else {
                 // Infinite wait
+                tracing::debug!("[WAIT] Calling wait (infinite)");
                 self.notifier.cv.wait(&mut mutex_guard);
+                tracing::debug!("[WAIT] Woke up from infinite wait");
 
                 // Check if anything is ready after waking
-                if self.check_ready() {
+                let is_ready = self.check_ready();
+                tracing::debug!("[WAIT] Post-wake check_ready: {}", is_ready);
+                if is_ready {
+                    tracing::debug!("[WAIT] Ready after wake, returning true");
                     return true;
                 }
+                tracing::debug!("[WAIT] Not ready after wake, looping...");
                 // If notified but nothing ready yet, loop and wait again
             }
         }
     }
 
     fn check_ready(&self) -> bool {
+        tracing::debug!("[WAIT] check_ready: {} subs, {} gcs, {} srvs, {} clients, {} events",
+            self.subscriptions.len(), self.guard_conditions.len(), self.services.len(),
+            self.clients.len(), self.events.len());
+
         // Check subscriptions
-        for sub_impl_ptr in &self.subscriptions {
+        for (i, sub_impl_ptr) in self.subscriptions.iter().enumerate() {
             if sub_impl_ptr.is_null() {
                 continue;
             }
             unsafe {
                 let sub_impl = &*((*sub_impl_ptr) as *const _ as *const crate::pubsub::SubscriptionImpl);
-                if sub_impl.is_ready() {
+                let ready = sub_impl.is_ready();
+                tracing::debug!("[WAIT] Subscription {}: ready={}", i, ready);
+                if ready {
                     return true;
                 }
             }
         }
 
         // Check guard conditions
-        for gc_impl_ptr in &self.guard_conditions {
+        for (i, gc_impl_ptr) in self.guard_conditions.iter().enumerate() {
             if gc_impl_ptr.is_null() {
+                tracing::debug!("[WAIT] Guard condition {}: NULL", i);
                 continue;
             }
             unsafe {
                 let gc_impl = &*(*gc_impl_ptr as *const _ as *const crate::guard_condition::GuardConditionImpl);
-                if gc_impl.is_ready() {
+                let ready = gc_impl.is_ready();
+                tracing::debug!("[WAIT] Guard condition {}: ready={}", i, ready);
+                if ready {
+                    tracing::debug!("[WAIT] Guard condition {} is ready! Returning true", i);
                     return true;
                 }
             }
         }
 
         // Check services
-        for srv_impl_ptr in &self.services {
+        for (i, srv_impl_ptr) in self.services.iter().enumerate() {
             if srv_impl_ptr.is_null() {
                 continue;
             }
             unsafe {
                 let srv_impl = &*(*srv_impl_ptr as *const _ as *const crate::service::ServiceImpl);
-                if srv_impl.is_ready() {
+                let ready = srv_impl.is_ready();
+                tracing::debug!("[WAIT] Service {}: ready={}", i, ready);
+                if ready {
                     return true;
                 }
             }
         }
 
         // Check clients
-        for cli_impl_ptr in &self.clients {
+        for (i, cli_impl_ptr) in self.clients.iter().enumerate() {
             if cli_impl_ptr.is_null() {
                 continue;
             }
             unsafe {
                 let cli_impl = &*(*cli_impl_ptr as *const _ as *const crate::service::ClientImpl);
-                if cli_impl.is_ready() {
+                let ready = cli_impl.is_ready();
+                tracing::debug!("[WAIT] Client {}: ready={}", i, ready);
+                if ready {
                     return true;
                 }
             }
         }
 
         // Check events
-        for event_ptr in &self.events {
+        for (i, event_ptr) in self.events.iter().enumerate() {
             if event_ptr.is_null() {
                 continue;
             }
@@ -136,13 +179,16 @@ impl WaitSetImpl {
                 let event = &*(*event_ptr);
                 if !event.data.is_null() {
                     let event_handle = &*(event.data as *const ros_z::event::RmEventHandle);
-                    if event_handle.is_ready() {
+                    let ready = event_handle.is_ready();
+                    tracing::debug!("[WAIT] Event {}: ready={}", i, ready);
+                    if ready {
                         return true;
                     }
                 }
             }
         }
 
+        tracing::debug!("[WAIT] check_ready: nothing ready");
         false
     }
 }

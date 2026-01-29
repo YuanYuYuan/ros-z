@@ -18,11 +18,14 @@ impl GuardConditionImpl {
             .as_ref()
             .ok_or(())?;
         self.triggered = true;
+        tracing::debug!("[GC] Guard condition triggered, calling notify_all()");
         notifier.notify_all();
+        tracing::debug!("[GC] notify_all() called");
         Ok(())
     }
 
     pub fn reset(&mut self) {
+        tracing::debug!("[GC] Guard condition reset");
         self.triggered = false;
     }
 }

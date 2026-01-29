@@ -71,4 +71,25 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
-ament_package()
+# Create a cmake extras file to export the library target
+# This is needed because the library is built by Cargo and doesn't exist at CMake configure time
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/rmw_zenoh_rs-extras.cmake" "
+# Export rmw_zenoh_rs library
+if(NOT TARGET rmw_zenoh_rs::rmw_zenoh_rs)
+  add_library(rmw_zenoh_rs::rmw_zenoh_rs SHARED IMPORTED)
+  set_target_properties(rmw_zenoh_rs::rmw_zenoh_rs PROPERTIES
+    IMPORTED_LOCATION \"\${rmw_zenoh_rs_DIR}/../../../lib/librmw_zenoh_rs.so\"
+  )
+endif()
+# Also provide the library without namespace for ament_target_dependencies
+set(rmw_zenoh_rs_LIBRARIES \"\${rmw_zenoh_rs_DIR}/../../../lib/librmw_zenoh_rs.so\")
+")
+
+install(
+  FILES "${CMAKE_CURRENT_BINARY_DIR}/rmw_zenoh_rs-extras.cmake"
+  DESTINATION share/${PROJECT_NAME}/cmake
+)
+
+ament_package(
+  CONFIG_EXTRAS "${CMAKE_CURRENT_BINARY_DIR}/rmw_zenoh_rs-extras.cmake"
+)

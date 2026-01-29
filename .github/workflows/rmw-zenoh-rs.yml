@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       test_filter:
-        description: 'CTest filter regex (e.g., test_publisher|test_node)'
+        description: 'CTest filter regex (e.g., test_publisher|test_node) - empty for all rcl+rclcpp tests'
         required: false
         default: ''
 
@@ -73,10 +73,18 @@ jobs:
           ref: patch-rmwz/jazzy
           path: rcl
 
+      - name: Checkout rclcpp fork
+        uses: actions/checkout@v4
+        with:
+          repository: YuanYuYuan/rclcpp
+          ref: patch-rmwz/jazzy
+          path: rclcpp
+
       - name: Setup workspace
         run: |
           mkdir -p ws/src
           cp -r $GITHUB_WORKSPACE/rcl ws/src/rcl
+          cp -r $GITHUB_WORKSPACE/rclcpp ws/src/rclcpp
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -90,20 +98,31 @@ jobs:
           mv ${NU_PKG}/nu /usr/local/bin/
           chmod +x ros-z/scripts/test-ros-packages.nu
 
-      - name: Test ROS packages
+      - name: Test RCL packages
         shell: bash
         run: |
           cd ros-z
           source /opt/ros/jazzy/setup.bash
-          TEST_FILTER="${{ github.event.inputs.test_filter }}"
-          if [ -z "$TEST_FILTER" ]; then
-            TEST_FILTER="rmw_zenoh_rs"
-          fi
+          # Test rcl: run all tests
           nu scripts/test-ros-packages.nu \
             --ws-dir $GITHUB_WORKSPACE/ws \
             --rmw-path $GITHUB_WORKSPACE/ros-z/rmw-zenoh-rs \
+            --packages rcl \
             --verbose \
-            --include-filter "$TEST_FILTER" \
+            --exclude-filter "test_count_matched|test_events"
+
+      - name: Test RCLCPP packages (RMW-relevant tests only)
+        shell: bash
+        run: |
+          cd ros-z
+          source /opt/ros/jazzy/setup.bash
+          # Test rclcpp: run only RMW-relevant tests (node, publisher, subscriber, service, client, graph)
+          nu scripts/test-ros-packages.nu \
+            --ws-dir $GITHUB_WORKSPACE/ws \
+            --rmw-path $GITHUB_WORKSPACE/ros-z/rmw-zenoh-rs \
+            --packages rclcpp \
+            --verbose \
+            --include-filter "test_node|test_publisher|test_subscription|test_service|test_client|test_node_graph" \
             --exclude-filter "test_count_matched|test_events"
 
       - name: Upload test results

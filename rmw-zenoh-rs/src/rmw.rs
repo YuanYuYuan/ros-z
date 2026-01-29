@@ -404,19 +404,24 @@ pub extern "C" fn rmw_create_subscription(
     let callback_holder_clone = callback_holder.clone();
     let user_data_holder_clone = user_data_holder.clone();
     let unread_count_clone = unread_count_holder.clone();
+    let topic_name_for_log = topic_str.to_string();
     let notify_callback = move || {
+        tracing::debug!("[notify_callback] Message received on topic '{}', notifying wait sets and checking for executor callback", topic_name_for_log);
         notifier_clone.notify_all();
         // Invoke the user callback if set, otherwise increment unread count
         if let Ok(cb) = callback_holder_clone.lock() {
             if let Some(callback_fn) = *cb {
+                tracing::debug!("[notify_callback] Executor callback is set for topic '{}', invoking it", topic_name_for_log);
                 if let Ok(user_data_usize) = user_data_holder_clone.lock() {
                     unsafe {
                         let user_data_ptr = *user_data_usize as *const std::ffi::c_void;
                         callback_fn(user_data_ptr, 1); // 1 new message
                     }
                 }
+                tracing::debug!("[notify_callback] Executor callback invoked successfully for topic '{}'", topic_name_for_log);
             } else {
                 // No callback set, increment unread count
+                tracing::debug!("[notify_callback] No executor callback set for topic '{}', incrementing unread count", topic_name_for_log);
                 if let Ok(mut unread) = unread_count_clone.lock() {
                     *unread += 1;
                 }
@@ -1830,7 +1835,12 @@ pub extern "C" fn rmw_publisher_event_init(
     // Convert RMW event type to Zenoh event type
     let zenoh_event_type = match rmw_event_type_to_zenoh_event(event_type) {
         Some(t) => t,
-        None => return RMW_RET_UNSUPPORTED as _,
+        None => {
+            let msg = std::ffi::CString::new(format!("Event type {} is not supported by rmw_zenoh_rs", event_type))
+                .unwrap_or_else(|_| std::ffi::CString::new("Event type is not supported").unwrap());
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), cfile!(), line!() as usize) };
+            return RMW_RET_UNSUPPORTED as _;
+        }
     };
 
     // Verify this is a publisher event type
@@ -1878,7 +1888,12 @@ pub extern "C" fn rmw_subscription_event_init(
     // Convert RMW event type to Zenoh event type
     let zenoh_event_type = match rmw_event_type_to_zenoh_event(event_type) {
         Some(t) => t,
-        None => return RMW_RET_UNSUPPORTED as _,
+        None => {
+            let msg = std::ffi::CString::new(format!("Event type {} is not supported by rmw_zenoh_rs", event_type))
+                .unwrap_or_else(|_| std::ffi::CString::new("Event type is not supported").unwrap());
+            unsafe { crate::ros::rcutils_set_error_state(msg.as_ptr(), cfile!(), line!() as usize) };
+            return RMW_RET_UNSUPPORTED as _;
+        }
     };
 
     // Verify this is a subscription event type
